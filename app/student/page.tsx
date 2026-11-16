@@ -9,19 +9,22 @@ import { Footer } from '@/components/layout/Footer';
 import { Button } from '@/components/ui/Button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Award, Bell, FileText, UserCircle, UserPlus } from 'lucide-react';
-import { api, UserApiRecord } from '@/lib/api/client';
+import { api, StudentProfileCompletionApiRecord, UserApiRecord } from '@/lib/api/client';
+import { getApiErrorMessage } from '@/lib/api/errors';
 
 export default function StudentPage() {
   const router = useRouter();
   const [user, setUser] = useState<UserApiRecord | null>(null);
+  const [completion, setCompletion] = useState<StudentProfileCompletionApiRecord | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
+  const [loadErrorMessage, setLoadErrorMessage] = useState('');
   const [loggingOut, setLoggingOut] = useState(false);
 
   useEffect(() => {
     let active = true;
     api.auth.getCurrentUser()
-      .then((profile) => {
+      .then(async (profile) => {
         if (!active) return;
         if (profile.role === 'CONSULTANT') {
           router.replace('/consultant');
@@ -31,7 +34,12 @@ export default function StudentPage() {
           router.replace('/admin');
           return;
         }
+
+        const completionStatus = await api.students.profileCompletion();
+        if (!active) return;
+
         setUser(profile);
+        setCompletion(completionStatus);
       })
       .catch((error: unknown) => {
         if (!active) return;
@@ -39,6 +47,7 @@ export default function StudentPage() {
           router.replace('/student/login');
         } else {
           setLoadError(true);
+          setLoadErrorMessage(getApiErrorMessage(error, 'Your account or profile progress could not be loaded.'));
         }
       })
       .finally(() => {
@@ -77,8 +86,10 @@ export default function StudentPage() {
         <Navigation />
         <main id="main-content" tabIndex={-1} className="flex-1 flex items-center justify-center px-4">
           <div className="text-center" role="alert">
-            <h1 className="mb-3 text-2xl font-bold text-gray-900">Your account could not be loaded</h1>
-            <p className="mb-5 text-gray-600">Please check your connection and try again.</p>
+            <h1 className="mb-3 text-2xl font-bold text-gray-900">Student dashboard unavailable</h1>
+            <p className="mb-5 text-gray-600">
+              {loadErrorMessage || 'Your account or profile progress could not be loaded.'}
+            </p>
             <Button variant="primary" onClick={() => window.location.reload()}>Try Again</Button>
           </div>
         </main>
@@ -109,6 +120,29 @@ export default function StudentPage() {
             >
               Sign Out
             </Button>
+          </div>
+
+          <div className="mb-8 rounded-2xl border border-primary-100 bg-white p-5 shadow-sm">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-sm font-medium uppercase tracking-wide text-primary-700">Profile progress</p>
+                <h2 className="mt-1 text-xl font-bold text-gray-900">Your setup is {Math.round(completion?.percentage ?? 0)}% complete</h2>
+              </div>
+              <div className="text-right text-sm font-semibold text-primary-800">
+                {Math.round(completion?.percentage ?? 0)}%
+              </div>
+            </div>
+            <div className="mt-4 h-3 overflow-hidden rounded-full bg-gray-200">
+              <div
+                className="h-full rounded-full bg-gradient-to-r from-primary-600 to-brand-gold transition-all duration-300"
+                style={{ width: `${Math.min(100, Math.max(0, completion?.percentage ?? 0))}%` }}
+              />
+            </div>
+            {completion?.missing_fields && completion.missing_fields.length > 0 && (
+              <p className="mt-3 text-sm text-gray-600">
+                Missing: {completion.missing_fields.join(', ')}
+              </p>
+            )}
           </div>
 
           <div className="mx-auto grid max-w-4xl grid-cols-1 gap-6 md:grid-cols-2">

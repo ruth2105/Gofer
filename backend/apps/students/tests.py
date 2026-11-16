@@ -176,11 +176,28 @@ class StudentProfileAPITests(APITestCase):
         response = self.client.get(self.completion_url)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIn('percentage', response.data)
-        self.assertIn('missing_fields', response.data)
-        self.assertIn('is_completed', response.data)
+        self.assertEqual(
+            response.data,
+            {
+                'percentage': 12.5,
+                'is_completed': False,
+                'missing_fields': [
+                    'date_of_birth',
+                    'nationality',
+                    'school_name',
+                    'field_of_study',
+                    'target_countries',
+                    'target_degree_level',
+                    'preferred_fields',
+                ],
+            },
+        )
 
     def test_profile_completion_updates_after_profile_update(self):
+        initial_status = self.client.get(self.completion_url)
+        self.assertEqual(initial_status.status_code, status.HTTP_200_OK)
+        self.assertEqual(initial_status.data['percentage'], 12.5)
+
         payload = {
             'date_of_birth': '2002-05-15',
             'nationality': 'Ethiopian',
@@ -202,6 +219,17 @@ class StudentProfileAPITests(APITestCase):
         profile = StudentProfile.objects.get(user=self.user)
 
         self.assertTrue(profile.profile_completed)
+
+        updated_status = self.client.get(self.completion_url)
+        self.assertEqual(updated_status.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            updated_status.data,
+            {
+                'percentage': 100.0,
+                'is_completed': True,
+                'missing_fields': [],
+            },
+        )
 
     # --------------------------------------------------
     # Country validation
