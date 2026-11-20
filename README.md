@@ -129,6 +129,15 @@ and uploaded files are not retained across service restarts or deploys. Upgrade
 to persistent paid services before relying on this deployment for production
 data.
 
+For Vercel, use the repository root (`.`) as the project root: `package.json`,
+`next.config.ts`, and the Next.js `app/` directory are at that level. Use the
+Next.js framework preset and default `npm run build` command. Configure the
+server-side `API_PROXY_TARGET` environment variable to the API base URL ending
+in `/api/v1` for every deployment environment. Do not set a static output
+directory; Next.js server rewrites require a server-capable deployment. The
+Vercel project settings and active deployment must be checked in the Vercel
+dashboard and verified after deployment.
+
 ## 📄 Available Pages
 
 ### Public Pages
