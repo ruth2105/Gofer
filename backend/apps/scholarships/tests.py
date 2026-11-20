@@ -1,6 +1,7 @@
 
 from datetime import date, timedelta
 
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
 
@@ -19,8 +20,16 @@ from .serializers import ScholarshipDetailSerializer
 class ScholarshipPublicApiTests(APITestCase):
     """Tests for the public scholarship API."""
 
+    def setUp(self):
+        """Create Country records needed for nationality filtering tests."""
+        Country.objects.create(
+            code='ET',
+            name='Ethiopia',
+            is_active=True,
+        )
+
     def create_scholarship(self, name, *, is_published, country='Ethiopia'):
-        return Scholarship.objects.create(
+        scholarship = Scholarship.objects.create(
             name=name,
             description=f'{name} description',
             short_description=f'{name} summary',
@@ -31,7 +40,47 @@ class ScholarshipPublicApiTests(APITestCase):
             amount=1000,
             amount_type='Full tuition',
             application_deadline=date.today() + timedelta(days=90),
-            is_published=is_published,
+            application_url='https://provider.example.org/apply/',
+            website_url='https://provider.example.org/',
+        )
+        if is_published:
+            self.add_verified_source(scholarship)
+            scholarship.is_published = True
+            scholarship.save()
+        return scholarship
+
+    def add_verified_source(self, scholarship):
+        verifier = User.objects.create_user(
+            email=f'verifier-{scholarship.pk}@example.org',
+            password='SecurePassword123!',
+            role='ADMIN',
+        )
+        source = OpportunitySource.objects.create(
+            name=f'Official source {scholarship.slug}',
+            organization=scholarship.provider,
+            base_url=f'https://{scholarship.slug}.example.org/',
+            source_type='UNIVERSITY',
+            collection_method='API',
+            is_active=True,
+        )
+        run = CollectionRun.objects.create(source=source)
+        return OpportunitySourceRecord.objects.create(
+            source=source,
+            collection_run=run,
+            scholarship=scholarship,
+            source_record_key=f'scholarship-{scholarship.pk}',
+            official_source_url=f'https://{scholarship.slug}.example.org/award/',
+            official_application_url=scholarship.application_url,
+            source_title=scholarship.name,
+            normalized_title=scholarship.name.lower(),
+            normalized_organization=scholarship.provider.lower(),
+            normalized_deadline=scholarship.application_deadline,
+            source_payload={'title': scholarship.name},
+            content_hash='a' * 64,
+            identity_fingerprint='b' * 64,
+            verification_status='VERIFIED',
+            verified_at=timezone.now(),
+            verified_by=verifier,
         )
 
     def test_public_list_includes_only_published_scholarships(self):
@@ -155,6 +204,48 @@ class ScholarshipPublicApiTests(APITestCase):
             identity_fingerprint='b' * 64,
         )
         Scholarship.objects.filter(pk=scholarship.pk).update(is_published=True)
+
+        response = self.client.get('/api/v1/scholarships/')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['count'], 0)
+
+    def test_public_nationality_filter_does_not_treat_unknown_as_universal(self):
+        unknown = self.create_scholarship(
+            'Unconfirmed nationality award',
+            is_published=True,
+        )
+        response = self.client.get(
+            '/api/v1/scholarships/',
+            {'nationality': 'ET'},
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['count'], 0)
+
+        unknown.nationality_eligibility = 'ALL'
+        unknown.save()
+        response = self.client.get(
+            '/api/v1/scholarships/',
+            {'nationality': 'ET'},
+        )
+        self.assertEqual(response.data['count'], 1)
+
+    def test_invalid_nationality_filter_is_rejected(self):
+        response = self.client.get(
+            '/api/v1/scholarships/',
+            {'nationality': 'ETH'},
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_expired_scholarships_are_hidden(self):
+        scholarship = self.create_scholarship(
+            'Expired award',
+            is_published=True,
+        )
+        Scholarship.objects.filter(pk=scholarship.pk).update(
+            application_deadline=date.today() - timedelta(days=1),
+        )
 
         response = self.client.get('/api/v1/scholarships/')
 
@@ -333,6 +424,7 @@ class EligibleScholarshipsApiTests(APITestCase):
         )
 
     def create_scholarship(self, name, **overrides):
+        should_publish = overrides.get('is_published', True)
         fields = {
             'name': name,
             'description': f'{name} description',
@@ -342,12 +434,56 @@ class EligibleScholarshipsApiTests(APITestCase):
             'level': 'POSTGRADUATE',
             'amount': 1000,
             'application_deadline': date.today() + timedelta(days=30),
-            'is_published': True,
+            'application_url': 'https://matching.example.org/apply/',
+            'is_published': False,
             'status': 'OPEN',
             'nationality_eligibility': 'ALL',
         }
         fields.update(overrides)
-        return Scholarship.objects.create(**fields)
+        fields['is_published'] = False
+        scholarship = Scholarship.objects.create(**fields)
+
+        if (
+            should_publish
+            and scholarship.application_deadline >= date.today()
+            and scholarship.status in ('OPEN', 'UPCOMING')
+        ):
+            verifier = User.objects.create_user(
+                email=f'verifier-{scholarship.pk}@example.org',
+                password='SecurePassword123!',
+                role='ADMIN',
+            )
+            source = OpportunitySource.objects.create(
+                name=f'Official matching source {scholarship.pk}',
+                organization=scholarship.provider,
+                base_url=f'https://{scholarship.pk}.matching.example.org/',
+                source_type='UNIVERSITY',
+                collection_method='API',
+                is_active=True,
+            )
+            run = CollectionRun.objects.create(source=source)
+            OpportunitySourceRecord.objects.create(
+                source=source,
+                collection_run=run,
+                scholarship=scholarship,
+                source_record_key=f'matching-scholarship-{scholarship.pk}',
+                official_source_url=f'https://{scholarship.pk}.matching.example.org/award/',
+                official_application_url=scholarship.application_url,
+                source_title=scholarship.name,
+                normalized_title=scholarship.name.lower(),
+                normalized_organization=scholarship.provider.lower(),
+                normalized_deadline=scholarship.application_deadline,
+                source_payload={'title': scholarship.name},
+                content_hash='c' * 64,
+                identity_fingerprint='d' * 64,
+                verification_status='VERIFIED',
+                verified_at=timezone.now(),
+                verified_by=verifier,
+            )
+            scholarship.is_published = True
+            scholarship.save()
+
+        return scholarship
 
     def test_endpoint_returns_eligible_not_eligible_and_unverified_results(self):
         eligible = self.create_scholarship(

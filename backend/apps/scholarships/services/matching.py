@@ -40,7 +40,7 @@ DEGREE_ALIASES = {
 
 
 def get_public_scholarships():
-    """Return published scholarships whose linked sources remain verified."""
+    """Return published scholarships whose linked sources remain verified and deadlines have not expired."""
 
     invalid_source_records = OpportunitySourceRecord.objects.filter(
         scholarship_id=OuterRef("pk"),
@@ -51,7 +51,10 @@ def get_public_scholarships():
         verified_by__role__in=("ADMIN", "SUPERADMIN"),
         source__is_active=True,
     )
-    return Scholarship.objects.filter(is_published=True).filter(
+    return Scholarship.objects.filter(
+        is_published=True,
+        application_deadline__gte=date.today(),
+    ).filter(
         ~Exists(invalid_source_records)
     )
 

@@ -2,12 +2,14 @@
 Views for Scholarship model.
 """
 
-from rest_framework import viewsets, filters, permissions
+from django.db.models import Q
+from rest_framework import viewsets, filters, permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from django_filters.rest_framework import DjangoFilterBackend
 from drf_spectacular.utils import extend_schema, OpenApiParameter
 
+from apps.common.models import Country
 from apps.students.views import get_student_profile
 from .models import Scholarship
 from .serializers import ScholarshipListSerializer, ScholarshipDetailSerializer
@@ -64,7 +66,32 @@ class ScholarshipViewSet(viewsets.ReadOnlyModelViewSet):
     lookup_field = 'slug'
 
     def get_queryset(self):
-        return get_public_scholarships()
+        queryset = get_public_scholarships()
+        
+        # Handle nationality filtering
+        nationality = self.request.query_params.get('nationality')
+        if nationality:
+            # Validate nationality code format (must be 2-letter ISO code)
+            if len(nationality) != 2 or not nationality.isalpha():
+                return queryset.none()  # Will trigger 400 in list()
+            
+            # Check if the country code exists and is active
+            nationality_upper = nationality.upper()
+            if not Country.objects.filter(code=nationality_upper, is_active=True).exists():
+                return queryset.none()  # Will trigger 400 in list()
+            
+            # Filter scholarships:
+            # - Include if nationality_eligibility='ALL' (universal)
+            # - Include if nationality_eligibility='SPECIFIC' and nationality in target_countries
+            # - Exclude if nationality is in excluded_countries
+            queryset = queryset.filter(
+                Q(nationality_eligibility='ALL') |
+                Q(nationality_eligibility='SPECIFIC', target_countries__contains=[nationality_upper])
+            ).exclude(
+                excluded_countries__contains=[nationality_upper]
+            )
+        
+        return queryset
 
     def get_serializer_class(self):
         if self.action == 'retrieve':
@@ -119,6 +146,12 @@ class ScholarshipViewSet(viewsets.ReadOnlyModelViewSet):
                 type=bool,
             ),
             OpenApiParameter(
+                name='nationality',
+                description='Filter by student nationality (2-letter ISO country code, e.g., ET, US)',
+                required=False,
+                type=str,
+            ),
+            OpenApiParameter(
                 name='search',
                 description='Search in name, provider, description',
                 required=False,
@@ -133,6 +166,24 @@ class ScholarshipViewSet(viewsets.ReadOnlyModelViewSet):
         ],
     )
     def list(self, request, *args, **kwargs):
+        # Validate nationality parameter if provided
+        nationality = request.query_params.get('nationality')
+        if nationality:
+            # Must be exactly 2 letters
+            if len(nationality) != 2 or not nationality.isalpha():
+                return Response(
+                    {'detail': 'Invalid nationality code. Must be a 2-letter ISO country code (e.g., ET, US).'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Must exist in our database as an active country
+            nationality_upper = nationality.upper()
+            if not Country.objects.filter(code=nationality_upper, is_active=True).exists():
+                return Response(
+                    {'detail': f'Unknown or inactive country code: {nationality_upper}'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        
         return super().list(request, *args, **kwargs)
 
 
