@@ -22,10 +22,14 @@ urlpatterns = [
     path('api/v1/docs/', SpectacularSwaggerView.as_view(url_name='schema'), name='swagger-ui'),
     path('api/v1/redoc/', SpectacularRedocView.as_view(url_name='schema'), name='redoc'),
 
+    # Health checks (public, no auth required)
+    path('api/v1/health/', include('apps.health.urls')),
+
     # API v1 endpoints
     path('api/v1/auth/', include('apps.accounts.urls')),
     path('api/v1/applications/', include('apps.applications.urls')),
     path('api/v1/consultations/', include('apps.consultations.urls')),
+    path('api/v1/documents/', include('apps.documents.urls')),
     path('api/v1/notifications/', include('apps.notifications.urls')),
     path('api/v1/scholarships/', include('apps.scholarships.urls')),
     path('api/v1/countries/', include('apps.common.urls')),

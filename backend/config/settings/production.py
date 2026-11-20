@@ -4,7 +4,8 @@ Production settings for GOFER EXAM project.
 
 from .base import *
 from decouple import config
-from django.core.exceptions import ImproperlyConfigured
+from django.core.exceptions import ImproperlyConfigured, ValidationError
+from django.core.validators import validate_email
 import environ
 from urllib.parse import urlsplit
 
@@ -59,14 +60,33 @@ EMAIL_BACKEND = config(
     'EMAIL_BACKEND',
     default='django.core.mail.backends.smtp.EmailBackend',
 )
-if (
-    EMAIL_BACKEND == 'django.core.mail.backends.console.EmailBackend'
-    or not DEFAULT_FROM_EMAIL
-    or DEFAULT_FROM_EMAIL == 'webmaster@localhost'
-):
+non_delivery_backends = {
+    'django.core.mail.backends.console.EmailBackend',
+    'django.core.mail.backends.dummy.EmailBackend',
+    'django.core.mail.backends.locmem.EmailBackend',
+    'django.core.mail.backends.filebased.EmailBackend',
+}
+if EMAIL_BACKEND in non_delivery_backends:
     raise ImproperlyConfigured(
-        'Configure a production email backend and GOFER_EMAIL_FROM.'
+        'Configure SMTP or a transactional provider email backend in production.'
     )
+if (
+    not DEFAULT_FROM_EMAIL
+    or DEFAULT_FROM_EMAIL == 'webmaster@localhost'
+    or 'YOUR_VERIFIED_DOMAIN' in DEFAULT_FROM_EMAIL
+):
+    raise ImproperlyConfigured('Set GOFER_EMAIL_FROM to the verified sender address.')
+try:
+    validate_email(DEFAULT_FROM_EMAIL)
+except ValidationError as error:
+    raise ImproperlyConfigured('GOFER_EMAIL_FROM must be a valid email address.') from error
+
+if (
+    EMAIL_BACKEND == 'config.email_backends.brevo.BrevoEmailBackend'
+    and not BREVO_API_KEY.strip()
+):
+    raise ImproperlyConfigured('Set BREVO_API_KEY to configure Brevo email delivery.')
+
 if EMAIL_BACKEND == 'django.core.mail.backends.smtp.EmailBackend':
     if not EMAIL_HOST:
         raise ImproperlyConfigured(
@@ -74,6 +94,66 @@ if EMAIL_BACKEND == 'django.core.mail.backends.smtp.EmailBackend':
         )
     if EMAIL_USE_TLS and EMAIL_USE_SSL:
         raise ImproperlyConfigured('EMAIL_USE_TLS and EMAIL_USE_SSL cannot both be enabled.')
+    if not EMAIL_USE_TLS and not EMAIL_USE_SSL:
+        raise ImproperlyConfigured('Production SMTP must use TLS or SSL.')
+    if not 1 <= EMAIL_PORT <= 65535:
+        raise ImproperlyConfigured('EMAIL_PORT must be between 1 and 65535.')
+
+# Storage Configuration Validation
+if STORAGE_BACKEND not in ['LOCAL', 'S3', 'GCS', 'AZURE', 'R2']:
+    raise ImproperlyConfigured(
+        f'STORAGE_BACKEND must be one of: LOCAL, S3, GCS, AZURE, R2. Got: {STORAGE_BACKEND}'
+    )
+
+if STORAGE_BACKEND == 'LOCAL':
+    # Warn about ephemeral storage in production
+    import warnings
+    warnings.warn(
+        'Using LOCAL storage in production. Files will be lost on deployment/restart. '
+        'Configure S3, GCS, Azure, or R2 for durable storage.',
+        RuntimeWarning
+    )
+
+if STORAGE_BACKEND == 'S3':
+    if not AWS_ACCESS_KEY_ID or not AWS_SECRET_ACCESS_KEY:
+        raise ImproperlyConfigured('Set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY for S3 storage.')
+    if not AWS_STORAGE_BUCKET_NAME:
+        raise ImproperlyConfigured('Set AWS_STORAGE_BUCKET_NAME for S3 storage.')
+
+if STORAGE_BACKEND == 'GCS':
+    if not GS_BUCKET_NAME:
+        raise ImproperlyConfigured('Set GS_BUCKET_NAME for Google Cloud Storage.')
+    if not GS_CREDENTIALS:
+        raise ImproperlyConfigured(
+            'Set GS_CREDENTIALS (path to service account JSON) for Google Cloud Storage.'
+        )
+
+if STORAGE_BACKEND == 'AZURE':
+    if not AZURE_ACCOUNT_NAME or not AZURE_CONTAINER:
+        raise ImproperlyConfigured('Set AZURE_ACCOUNT_NAME and AZURE_CONTAINER for Azure storage.')
+    if not AZURE_ACCOUNT_KEY and not AZURE_CONNECTION_STRING:
+        raise ImproperlyConfigured(
+            'Set AZURE_ACCOUNT_KEY or AZURE_CONNECTION_STRING for Azure storage.'
+        )
+
+if STORAGE_BACKEND == 'R2':
+    if not AWS_ACCESS_KEY_ID or not AWS_SECRET_ACCESS_KEY:
+        raise ImproperlyConfigured(
+            'Set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY for Cloudflare R2.'
+        )
+    if not AWS_STORAGE_BUCKET_NAME:
+        raise ImproperlyConfigured('Set AWS_STORAGE_BUCKET_NAME for Cloudflare R2.')
+    if not AWS_S3_ENDPOINT_URL:
+        raise ImproperlyConfigured(
+            'Set AWS_S3_ENDPOINT_URL (e.g., https://<account_id>.r2.cloudflarestorage.com) '
+            'for Cloudflare R2.'
+        )
+
+if EMAIL_BACKEND == 'django.core.mail.backends.smtp.EmailBackend':
+    if bool(EMAIL_HOST_USER) != bool(EMAIL_HOST_PASSWORD):
+        raise ImproperlyConfigured(
+            'Set both EMAIL_HOST_USER and EMAIL_HOST_PASSWORD, or leave both empty for an authorized relay.'
+        )
 
 # Static files (AWS S3 or similar)
 # Uncomment and configure when ready to use cloud storage

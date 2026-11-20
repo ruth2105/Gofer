@@ -32,6 +32,13 @@ CORS_ALLOWED_ORIGINS = [
 
 CORS_ALLOW_CREDENTIALS = True
 
+# CSRF Settings for Development
+# Allow frontend on localhost:3000 to send CSRF-protected requests
+CSRF_TRUSTED_ORIGINS = [
+    'http://localhost:3000',
+    'http://127.0.0.1:3000',
+]
+
 # Development-specific installed apps
 INSTALLED_APPS += [
     'debug_toolbar',
