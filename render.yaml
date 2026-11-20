@@ -12,8 +12,10 @@ services:
     buildCommand: npm install && npm run build
     startCommand: npm run start
     envVars:
-      - key: API_PROXY_TARGET
-        value: https://gofere-api-ruth2105.onrender.com/api/v1
+      - key: NEXT_PUBLIC_API_URL
+        value: https://gofere-api-ruth2105.onrender.com
+      - key: NEXT_PUBLIC_SITE_URL
+        value: https://gofere.vercel.app
 
   - type: web
     name: gofere-api-ruth2105
@@ -22,7 +24,7 @@ services:
     rootDir: backend
     buildCommand: pip install -r requirements/production.txt && python manage.py collectstatic --no-input
     startCommand: python manage.py migrate --noinput && gunicorn config.wsgi:application --bind 0.0.0.0:$PORT
-    healthCheckPath: /api/v1/schema/
+    healthCheckPath: /api/v1/health/
     envVars:
       - key: PYTHON_VERSION
         value: 3.12.10
@@ -40,3 +42,13 @@ services:
         value: https://gofere-web-preview.onrender.com,https://gofere.vercel.app
       - key: CSRF_TRUSTED_ORIGINS
         value: https://gofere-api-ruth2105.onrender.com,https://gofere-web-preview.onrender.com,https://gofere.vercel.app
+      - key: GOFER_FRONTEND_URL
+        value: https://gofere.vercel.app
+      - key: EMAIL_BACKEND
+        value: django.core.mail.backends.console.EmailBackend
+      - key: GOFER_EMAIL_FROM
+        value: noreply@goferexam.com
+      - key: STORAGE_BACKEND
+        value: LOCAL
+      - key: MONITORING_ENABLED
+        value: false
