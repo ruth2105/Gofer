@@ -5,6 +5,8 @@ Supports global scholarship eligibility and country validation.
 """
 
 from rest_framework import serializers
+from django.db.models import Q
+from django.utils import timezone
 
 from apps.common.models import Country
 from .models import Scholarship
@@ -157,6 +159,7 @@ class ScholarshipDetailSerializer(
 
     days_until_deadline = serializers.IntegerField(read_only=True)
     is_open = serializers.BooleanField(read_only=True)
+    verified_sources = serializers.SerializerMethodField()
 
     class Meta:
         model = Scholarship
@@ -190,6 +193,7 @@ class ScholarshipDetailSerializer(
             'website_url',
             'days_until_deadline',
             'is_open',
+            'verified_sources',
         )
 
         read_only_fields = (
@@ -198,3 +202,29 @@ class ScholarshipDetailSerializer(
             'days_until_deadline',
             'is_open',
         )
+
+    def get_verified_sources(self, scholarship):
+        records = scholarship.source_records.filter(
+            verification_status='VERIFIED',
+            source_status='AVAILABLE',
+            verified_at__isnull=False,
+            verified_by__role__in=('ADMIN', 'SUPERADMIN'),
+            source__is_active=True,
+            normalized_deadline=scholarship.application_deadline,
+        ).filter(
+            Q(normalized_deadline__isnull=True)
+            | Q(normalized_deadline__gte=timezone.localdate())
+        ).filter(
+            Q(official_application_url=scholarship.application_url)
+            | Q(official_source_url=scholarship.application_url)
+            | Q(official_source_url=scholarship.website_url)
+        ).select_related('source')
+        return [
+            {
+                'url': record.official_source_url,
+                'organization': record.source.organization,
+                'verified_at': record.verified_at,
+                'verified_by': 'Gofer Exam administrator',
+            }
+            for record in records
+        ]

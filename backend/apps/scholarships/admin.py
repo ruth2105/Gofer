@@ -6,6 +6,7 @@ Admin configuration for Scholarship model.
 from django.contrib import admin
 from django.contrib import messages
 from django.core.exceptions import ValidationError
+from django.utils import timezone
 from .models import Scholarship
 
 
@@ -58,7 +59,14 @@ class ScholarshipAdmin(admin.ModelAdmin):
             'fields': ('type', 'level', 'amount', 'amount_type')
         }),
         ('Eligibility', {
-            'fields': ('eligibility', 'required_gpa', 'fields', 'target_countries')
+            'fields': (
+                'eligibility',
+                'nationality_eligibility',
+                'target_countries',
+                'excluded_countries',
+                'required_gpa',
+                'fields',
+            )
         }),
         ('Application', {
             'fields': ('application_deadline', 'application_url', 'documents_required')
@@ -81,9 +89,19 @@ class ScholarshipAdmin(admin.ModelAdmin):
         'mark_as_featured',
         'mark_as_open',
         'mark_as_closed',
+        'mark_as_expired',
         'publish_selected',
         'unpublish_selected',
     ]
+
+    def has_add_permission(self, request):
+        return request.user.is_admin and super().has_add_permission(request)
+
+    def has_change_permission(self, request, obj=None):
+        return request.user.is_admin and super().has_change_permission(request, obj)
+
+    def has_delete_permission(self, request, obj=None):
+        return request.user.is_admin and super().has_delete_permission(request, obj)
 
     @admin.action(description="Mark selected scholarships as featured")
     def mark_as_featured(self, request, queryset):
@@ -95,12 +113,21 @@ class ScholarshipAdmin(admin.ModelAdmin):
 
     @admin.action(description="Mark selected scholarships as closed")
     def mark_as_closed(self, request, queryset):
-        queryset.update(status='CLOSED')
+        queryset.update(status='CLOSED', is_published=False)
+
+    @admin.action(description="Mark expired scholarships as expired")
+    def mark_as_expired(self, request, queryset):
+        updated = queryset.filter(
+            application_deadline__lt=timezone.localdate(),
+        ).update(status='EXPIRED', is_published=False)
+        self.message_user(
+            request,
+            f'{updated} expired scholarship record(s) marked expired and unpublished.',
+            level=messages.SUCCESS,
+        )
 
     @admin.action(description="Publish selected scholarships")
     def publish_selected(self, request, queryset):
-        from django.utils import timezone
-
         published = 0
         errors = []
         for scholarship in queryset:

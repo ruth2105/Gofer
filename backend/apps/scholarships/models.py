@@ -9,6 +9,7 @@ import uuid
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.core.validators import MinValueValidator, MaxValueValidator
+from django.utils import timezone
 from django.utils.text import slugify
 
 
@@ -36,6 +37,7 @@ class Scholarship(models.Model):
         ('OPEN', 'Open for Applications'),
         ('UPCOMING', 'Upcoming'),
         ('CLOSED', 'Closed'),
+        ('EXPIRED', 'Expired'),
     ]
 
     NATIONALITY_ELIGIBILITY_CHOICES = [
@@ -202,32 +204,70 @@ class Scholarship(models.Model):
         return f"{self.name} - {self.provider}"
 
     def source_records_are_verified(self):
-        """Return whether every linked external source is currently valid."""
+        """Return whether at least one linked source is verified and all are valid."""
         if not self.pk:
-            return True
+            return False
 
-        return not self.source_records.exclude(
+        valid_records = self.source_records.filter(
             verification_status='VERIFIED',
             source_status='AVAILABLE',
             verified_at__isnull=False,
             verified_by__role__in=('ADMIN', 'SUPERADMIN'),
             source__is_active=True,
+            normalized_deadline=self.application_deadline,
+        ).filter(
+            models.Q(normalized_deadline__isnull=True)
+            | models.Q(normalized_deadline__gte=timezone.localdate())
+        )
+        if self.application_url:
+            valid_records = valid_records.filter(
+                official_application_url=self.application_url,
+            )
+        elif self.website_url:
+            valid_records = valid_records.filter(
+                official_source_url=self.website_url,
+            )
+        return valid_records.exists() and not self.source_records.exclude(
+            pk__in=valid_records.values('pk')
         ).exists()
 
     def clean(self):
         super().clean()
 
-        if self.is_published and not self.source_records_are_verified():
-            raise ValidationError({
-                'is_published': (
-                    'A scholarship with external source records can only be '
-                    'published when every source is verified, available, '
-                    'active, and attributed to an administrator.'
-                )
-            })
+        if self.is_published:
+            if self.status not in ('OPEN', 'UPCOMING'):
+                raise ValidationError({
+                    'status': 'Only open or upcoming scholarships can be published.'
+                })
+
+            if self.application_deadline < timezone.localdate():
+                raise ValidationError({
+                    'application_deadline': 'Expired scholarships cannot be published.'
+                })
+
+            if not (self.application_url or self.website_url):
+                raise ValidationError({
+                    'application_url': (
+                        'A published scholarship must include an official application '
+                        'or provider website.'
+                    )
+                })
+
+            if not self.source_records_are_verified():
+                raise ValidationError({
+                    'is_published': (
+                        'A scholarship needs currently verified, available official '
+                        'source evidence before publication.'
+                    )
+                })
 
     def save(self, *args, **kwargs):
         """Auto-generate slug and publication timestamp when needed."""
+        from apps.opportunities.models import normalize_url
+
+        self.application_url = normalize_url(self.application_url)
+        self.website_url = normalize_url(self.website_url)
+
         if not self.slug:
             base_slug = slugify(self.name)
             slug = base_slug
@@ -243,10 +283,7 @@ class Scholarship(models.Model):
             from django.utils import timezone
             self.published_at = timezone.now()
 
-        update_fields = kwargs.get('update_fields')
-        if self.is_published and (
-            update_fields is None or 'is_published' in update_fields
-        ):
+        if self.is_published:
             self.clean()
 
         super().save(*args, **kwargs)
@@ -254,7 +291,10 @@ class Scholarship(models.Model):
     @property
     def is_open(self):
         """Check whether scholarship status is open."""
-        return self.status == 'OPEN'
+        return (
+            self.status == 'OPEN'
+            and self.application_deadline >= timezone.localdate()
+        )
 
     @property
     def days_until_deadline(self):
