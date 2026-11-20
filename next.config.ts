@@ -1,10 +1,11 @@
 import type { NextConfig } from "next";
 
-const apiProxyTarget = (
+const configuredApiProxyTarget = (
   process.env.API_PROXY_TARGET
   || process.env.NEXT_PUBLIC_API_URL
   || "http://localhost:8000/api/v1"
-).replace(/\/+$/, "");
+);
+const apiProxyTarget = configuredApiProxyTarget.replace(/\/+$/, "");
 
 const nextConfig: NextConfig = {
   skipTrailingSlashRedirect: true,

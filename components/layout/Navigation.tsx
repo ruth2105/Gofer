@@ -2,15 +2,20 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { Menu, X } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { BrandLogo } from '@/components/layout/BrandLogo';
+import { useAuth } from '@/components/auth/AuthProvider';
+import { getRoleNavigation } from '@/lib/auth/access';
+import { api } from '@/lib/api/client';
 import { cn } from '@/lib/utils';
 
 export const Navigation: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
   const pathname = usePathname();
+  const router = useRouter();
+  const { user, status } = useAuth();
   const menuButtonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
@@ -38,12 +43,22 @@ export const Navigation: React.FC = () => {
     { href: '/about', label: 'About' },
     { href: '/contact', label: 'Contact' }
   ];
+  const accountLinks = user ? getRoleNavigation(user.role) : [];
   
   const isActive = (href: string) => {
     if (href === '/') {
       return pathname === '/';
     }
     return pathname.startsWith(href);
+  };
+
+  const handleSignOut = async () => {
+    setIsOpen(false);
+    try {
+      await api.auth.logout();
+    } finally {
+      router.replace('/student/login');
+    }
   };
 
   return (
@@ -110,20 +125,47 @@ export const Navigation: React.FC = () => {
                 </Link>
               );
             })}
+            {status === 'authenticated' && accountLinks.map((link) => {
+              const active = isActive(link.href);
+              return (
+                <Link
+                  key={link.href}
+                  href={link.href}
+                  className={cn(
+                    'px-3 py-2 rounded-md text-sm font-medium transition-all duration-200',
+                    'focus:outline-none focus-visible:ring-4 focus-visible:ring-brand-gold/40',
+                    active
+                      ? 'text-primary-900 bg-primary-50 font-semibold'
+                      : 'text-gray-700 hover:text-primary-600 hover:bg-primary-50/50'
+                  )}
+                  aria-current={active ? 'page' : undefined}
+                >
+                  {link.label}
+                </Link>
+              );
+            })}
           </div>
 
           {/* CTA Buttons */}
           <div className="hidden xl:flex items-center space-x-3">
-            <Link href="/student/login">
-              <Button variant="ghost" size="sm">
-                Sign In
+            {status === 'authenticated' ? (
+              <Button variant="ghost" size="sm" onClick={handleSignOut}>
+                Sign Out
               </Button>
-            </Link>
-            <Link href="/student/register">
-              <Button variant="primary" size="sm">
-                Get Started
-              </Button>
-            </Link>
+            ) : status === 'anonymous' || status === 'error' ? (
+              <>
+                <Link href="/student/login">
+                  <Button variant="ghost" size="sm">
+                    Sign In
+                  </Button>
+                </Link>
+                <Link href="/student/register">
+                  <Button variant="primary" size="sm">
+                    Get Started
+                  </Button>
+                </Link>
+              </>
+            ) : null}
           </div>
 
           {/* Mobile menu button */}
@@ -150,8 +192,8 @@ export const Navigation: React.FC = () => {
       <div
         id="mobile-menu"
         className={cn(
-          "xl:hidden bg-white border-t overflow-hidden transition-all duration-300 ease-in-out",
-          isOpen ? "max-h-[600px] opacity-100" : "max-h-0 opacity-0"
+          "xl:hidden bg-white border-t overflow-y-auto transition-all duration-300 ease-in-out",
+          isOpen ? "max-h-[calc(100dvh-4rem)] opacity-100" : "max-h-0 opacity-0"
         )}
         aria-hidden={!isOpen}
         inert={!isOpen}
@@ -177,17 +219,45 @@ export const Navigation: React.FC = () => {
               </Link>
             );
           })}
+          {status === 'authenticated' && accountLinks.map((link) => {
+            const active = isActive(link.href);
+            return (
+              <Link
+                key={link.href}
+                href={link.href}
+                className={cn(
+                  'block px-3 py-2 rounded-md text-base font-medium transition-all duration-200',
+                  'focus:outline-none focus-visible:ring-4 focus-visible:ring-brand-gold/40',
+                  active
+                    ? 'text-primary-700 bg-primary-50 font-semibold border-l-4 border-primary-600'
+                    : 'text-gray-700 hover:text-primary-600 hover:bg-primary-50/50 border-l-4 border-transparent'
+                )}
+                onClick={() => setIsOpen(false)}
+                aria-current={active ? 'page' : undefined}
+              >
+                {link.label}
+              </Link>
+            );
+          })}
           <div className="pt-4 space-y-2 border-t border-gray-200 mt-4">
-            <Link href="/student/login" className="block" onClick={() => setIsOpen(false)}>
-              <Button variant="outline" size="md" className="w-full">
-                Sign In
+            {status === 'authenticated' ? (
+              <Button variant="outline" size="md" className="w-full" onClick={handleSignOut}>
+                Sign Out
               </Button>
-            </Link>
-            <Link href="/student/register" className="block" onClick={() => setIsOpen(false)}>
-              <Button variant="primary" size="md" className="w-full">
-                Get Started
-              </Button>
-            </Link>
+            ) : status === 'anonymous' || status === 'error' ? (
+              <>
+                <Link href="/student/login" className="block" onClick={() => setIsOpen(false)}>
+                  <Button variant="outline" size="md" className="w-full">
+                    Sign In
+                  </Button>
+                </Link>
+                <Link href="/student/register" className="block" onClick={() => setIsOpen(false)}>
+                  <Button variant="primary" size="md" className="w-full">
+                    Get Started
+                  </Button>
+                </Link>
+              </>
+            ) : null}
           </div>
         </div>
       </div>

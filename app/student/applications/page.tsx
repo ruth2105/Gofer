@@ -23,6 +23,7 @@ export default function StudentApplicationsPage() {
   const [user, setUser] = useState<{ role: string } | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [authError, setAuthError] = useState(false);
+  const [authErrorMessage, setAuthErrorMessage] = useState('');
   const [applications, setApplications] = useState<PaginatedResponse<ApplicationApiRecord> | null>(null);
   const [universities, setUniversities] = useState<UniversityApiRecord[]>([]);
   const [scholarships, setScholarships] = useState<ScholarshipApiRecord[]>([]);
@@ -44,7 +45,16 @@ export default function StudentApplicationsPage() {
     let active = true;
     api.auth.getCurrentUser()
       .then((profile) => {
-        if (active) setUser(profile);
+        if (!active) return;
+        if (profile.role !== 'STUDENT') {
+          router.replace(
+            profile.role === 'CONSULTANT'
+              ? '/consultant'
+              : '/admin'
+          );
+          return;
+        }
+        setUser(profile);
       })
       .catch((error: unknown) => {
         if (!active) return;
@@ -52,6 +62,7 @@ export default function StudentApplicationsPage() {
           router.replace('/student/login');
         } else {
           setAuthError(true);
+          setAuthErrorMessage(getApiErrorMessage(error, 'Your account could not be loaded.'));
         }
       })
       .finally(() => {
@@ -185,7 +196,7 @@ export default function StudentApplicationsPage() {
         <div className="flex-1 flex items-center justify-center px-4">
           <div className="text-center" role="alert">
             <h1 className="mb-3 text-2xl font-bold text-gray-900">Your account could not be loaded</h1>
-            <p className="mb-5 text-gray-600">Please check your connection and try again.</p>
+            <p className="mb-5 text-gray-600">{authErrorMessage}</p>
             <Button variant="primary" onClick={() => window.location.reload()}>Try Again</Button>
           </div>
         </div>

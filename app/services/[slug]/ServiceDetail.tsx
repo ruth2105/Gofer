@@ -10,11 +10,13 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { ArrowLeft, Briefcase } from 'lucide-react';
 import { getService } from '@/lib/api/catalogues';
 import { ServiceApiRecord } from '@/lib/api/client';
+import { getApiErrorMessage } from '@/lib/api/errors';
 
 export default function ServiceDetail({ slug }: { slug: string }) {
   const [service, setService] = useState<ServiceApiRecord | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
+  const [loadErrorMessage, setLoadErrorMessage] = useState('');
   const [notFound, setNotFound] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
 
@@ -30,6 +32,7 @@ export default function ServiceDetail({ slug }: { slug: string }) {
           setNotFound(true);
         } else {
           setLoadError(true);
+          setLoadErrorMessage(getApiErrorMessage(error, 'Service details could not be loaded.'));
         }
       })
       .finally(() => {
@@ -60,12 +63,13 @@ export default function ServiceDetail({ slug }: { slug: string }) {
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center" role="alert">
             <h1 className="mb-4 text-2xl font-bold text-gray-900">Service details could not be loaded</h1>
-            <p className="mb-4 text-gray-600">Please check your connection and try again.</p>
+            <p className="mb-4 text-gray-600">{loadErrorMessage}</p>
             <Button
               variant="primary"
               onClick={() => {
                 setLoading(true);
                 setLoadError(false);
+                setLoadErrorMessage('');
                 setRetryCount((count) => count + 1);
               }}
             >

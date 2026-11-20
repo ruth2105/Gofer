@@ -51,6 +51,16 @@ export type Scholarship = {
   fields: string[];
   applicationLink: string;
   featured: boolean;
+  nationalityEligibility?: 'ALL' | 'SPECIFIC' | 'NOT_CONFIRMED';
+  eligibleNationalities?: string[];
+  excludedNationalities?: string[];
+  documentsRequired?: string[];
+  verifiedSources?: Array<{
+    url: string;
+    organization: string;
+    verified_at: string;
+    verified_by: string;
+  }>;
 };
 
 export type ExamType = 'IELTS' | 'TOEFL' | 'Duolingo';

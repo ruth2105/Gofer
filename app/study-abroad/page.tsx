@@ -11,6 +11,7 @@ import { Globe, MapPin, DollarSign, ArrowRight } from 'lucide-react';
 import { getDestinations } from '@/lib/api/catalogues';
 import { DestinationApiRecord } from '@/lib/api/client';
 import { FeedbackState } from '@/components/ui/FeedbackState';
+import { getApiErrorMessage } from '@/lib/api/errors';
 
 function formatAnnualCost(value: string): string {
   const amount = Number(value);
@@ -26,6 +27,7 @@ export default function StudyAbroadPage() {
   const [destinations, setDestinations] = useState<DestinationApiRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
+  const [loadErrorMessage, setLoadErrorMessage] = useState('');
   const [query, setQuery] = useState('');
   const [retryCount, setRetryCount] = useState(0);
 
@@ -35,8 +37,11 @@ export default function StudyAbroadPage() {
       .then((items) => {
         if (active) setDestinations(items);
       })
-      .catch(() => {
-        if (active) setLoadError(true);
+      .catch((error: unknown) => {
+        if (active) {
+          setLoadError(true);
+          setLoadErrorMessage(getApiErrorMessage(error, 'Destinations could not be loaded.'));
+        }
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -99,12 +104,13 @@ export default function StudyAbroadPage() {
             <p className="py-12 text-center text-gray-600" role="status">Loading destinations…</p>
           ) : loadError ? (
             <div className="py-12 text-center" role="alert">
-              <p className="mb-4 text-gray-700">Destinations could not be loaded. Please try again.</p>
+              <p className="mb-4 text-gray-700">{loadErrorMessage}</p>
               <Button
                 variant="primary"
                 onClick={() => {
                   setLoading(true);
                   setLoadError(false);
+                  setLoadErrorMessage('');
                   setRetryCount((count) => count + 1);
                 }}
               >

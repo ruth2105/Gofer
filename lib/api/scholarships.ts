@@ -39,6 +39,11 @@ export function mapScholarship(record: ScholarshipApiRecord): Scholarship {
     fields: record.fields ?? [],
     applicationLink: record.application_url || record.website_url || '',
     featured: record.is_featured,
+    nationalityEligibility: record.nationality_eligibility,
+    eligibleNationalities: record.target_countries ?? [],
+    excludedNationalities: record.excluded_countries ?? [],
+    documentsRequired: record.documents_required ?? [],
+    verifiedSources: record.verified_sources ?? [],
   };
 }
 
@@ -54,6 +59,26 @@ export async function getScholarships(): Promise<Scholarship[]> {
   } while (response.next);
 
   return records.map(mapScholarship);
+}
+
+export async function getScholarshipPage(params: {
+  page: number;
+  search?: string;
+  country?: string;
+  type?: string;
+  level?: string;
+  ordering?: string;
+}): Promise<{
+  results: Scholarship[];
+  count: number;
+  next: string | null;
+  previous: string | null;
+}> {
+  const response = await api.scholarships.list(params);
+  return {
+    ...response,
+    results: response.results.map(mapScholarship),
+  };
 }
 
 export async function getScholarship(slug: string): Promise<Scholarship> {

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Navigation } from '@/components/layout/Navigation';
@@ -11,6 +11,20 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { LogIn } from 'lucide-react';
 import { api } from '@/lib/api/client';
 import { getApiErrorMessage } from '@/lib/api/errors';
+import { getSafeLoginDestination } from '@/lib/auth/access';
+
+function getLoginNotice(): string {
+  const reason = new URLSearchParams(window.location.search).get('reason');
+  if (reason === 'session_expired') return 'Your session expired. Sign in again to continue.';
+  if (reason === 'auth_required') return 'Sign in to access that page.';
+  if (reason === 'password_reset') return 'Your password was reset. Sign in with your new password.';
+  return '';
+}
+
+function subscribeToNavigation(callback: () => void): () => void {
+  window.addEventListener('popstate', callback);
+  return () => window.removeEventListener('popstate', callback);
+}
 
 export default function StudentLoginPage() {
   const router = useRouter();
@@ -24,6 +38,11 @@ export default function StudentLoginPage() {
   const [resending, setResending] = useState(false);
   const [resendAvailableAt, setResendAvailableAt] = useState(0);
   const [secondsRemaining, setSecondsRemaining] = useState(0);
+  const authNotice = useSyncExternalStore(
+    subscribeToNavigation,
+    getLoginNotice,
+    () => ''
+  );
 
   useEffect(() => {
     if (!resendAvailableAt) return;
@@ -43,13 +62,8 @@ export default function StudentLoginPage() {
     setErrorMessage('');
     try {
       const { user } = await api.auth.login({ email, password });
-      router.replace(
-        user.role === 'CONSULTANT'
-          ? '/consultant'
-          : user.role === 'ADMIN' || user.role === 'SUPERADMIN'
-            ? '/admin'
-            : '/student'
-      );
+      const next = new URLSearchParams(window.location.search).get('next');
+      router.replace(getSafeLoginDestination(next, user.role, window.location.origin));
     } catch (error: unknown) {
       const message = getApiErrorMessage(error, 'Sign in failed. Please check your details and try again.');
       setErrorMessage(message);
@@ -91,6 +105,11 @@ export default function StudentLoginPage() {
               </CardDescription>
             </CardHeader>
             <CardContent>
+              {authNotice && (
+                <p className="mb-4 rounded-lg bg-blue-50 p-3 text-sm text-blue-900" role="status">
+                  {authNotice}
+                </p>
+              )}
               <form onSubmit={handleSubmit} className="space-y-4">
                 <Input
                   type="email"
@@ -163,8 +182,8 @@ export default function StudentLoginPage() {
 
               <div className="mt-6 rounded-lg bg-blue-50 p-4">
                 <p className="text-sm text-blue-800">
-                  Your session is protected with secure HttpOnly cookies. If you need a password
-                  reset, contact Gofer Exam support.
+                  Your session is protected with secure HttpOnly cookies. Password reset links are
+                  single-use and expire automatically.
                 </p>
               </div>
             </CardContent>

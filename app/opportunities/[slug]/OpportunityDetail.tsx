@@ -35,6 +35,19 @@ function formatDeadline(value: string | null): string {
   return new Intl.DateTimeFormat('en', { dateStyle: 'medium' }).format(date);
 }
 
+function getNationalityScopeDescription(scope: OpportunityApiRecord['eligibility_scope']): string {
+  switch (scope) {
+    case 'ETHIOPIA_ONLY':
+      return 'Applicants must be Ethiopian nationals.';
+    case 'ETHIOPIA_AND_OTHERS':
+      return 'Applicants from Ethiopia and other eligible nationalities may apply.';
+    case 'OTHER_NATIONALITIES':
+      return 'Eligibility is limited to the listed non-Ethiopian nationalities.';
+    default:
+      return 'Nationality eligibility is not specified in this listing. Confirm it with the official provider.';
+  }
+}
+
 export default function OpportunityDetail({ slug }: { slug: string }) {
   const [opportunity, setOpportunity] = useState<OpportunityApiRecord | null>(null);
   const [loading, setLoading] = useState(true);
@@ -152,6 +165,39 @@ export default function OpportunityDetail({ slug }: { slug: string }) {
                     </ul>
                   </section>
                 )}
+                <section>
+                  <h2 className="mb-2 text-xl font-semibold text-gray-900">Nationality requirements</h2>
+                  <p className="leading-relaxed text-gray-700">
+                    {getNationalityScopeDescription(opportunity.eligibility_scope)}
+                  </p>
+                  {(opportunity.eligible_nationalities ?? []).length > 0 && (
+                    <p className="mt-2 text-gray-700">
+                      Eligible nationality codes: {opportunity.eligible_nationalities?.join(', ')}.
+                    </p>
+                  )}
+                  {(opportunity.excluded_nationalities ?? []).length > 0 && (
+                    <p className="mt-2 text-gray-700">
+                      Excluded nationality codes: {opportunity.excluded_nationalities?.join(', ')}.
+                    </p>
+                  )}
+                  {opportunity.eligibility_notes && (
+                    <p className="mt-2 whitespace-pre-line text-gray-700">{opportunity.eligibility_notes}</p>
+                  )}
+                </section>
+                <section>
+                  <h2 className="mb-2 text-xl font-semibold text-gray-900">Required documents</h2>
+                  {(opportunity.documents_required ?? []).length > 0 ? (
+                    <ul className="list-inside list-disc space-y-2 text-gray-700">
+                      {opportunity.documents_required?.map((document, index) => (
+                        <li key={`${document}-${index}`}>{document}</li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-gray-700">
+                      Required documents are not specified in this listing. Confirm the current requirements with the official provider.
+                    </p>
+                  )}
+                </section>
                 {opportunity.benefits.length > 0 && (
                   <section>
                     <h2 className="mb-3 text-xl font-semibold text-gray-900">Benefits</h2>
@@ -184,6 +230,12 @@ export default function OpportunityDetail({ slug }: { slug: string }) {
                     </div>
                   </div>
                 )}
+                {opportunity.location && (
+                  <div>
+                    <p className="font-semibold text-gray-900">Location</p>
+                    <p className="text-gray-600">{opportunity.location}</p>
+                  </div>
+                )}
                 <div className="flex items-start gap-3">
                   <CalendarDays className="mt-0.5 shrink-0 text-primary-700" size={19} aria-hidden="true" />
                   <div>
@@ -195,6 +247,83 @@ export default function OpportunityDetail({ slug }: { slug: string }) {
                   <p className="font-semibold text-gray-900">Study level</p>
                   <p className="text-gray-600">{formatLabel(opportunity.level)}</p>
                 </div>
+                {(opportunity.category === 'JOB' || opportunity.category === 'INTERNSHIP') && (
+                  <>
+                    {opportunity.category === 'JOB' && (
+                      <div>
+                        <p className="font-semibold text-gray-900">Employment type</p>
+                        <p className="text-gray-600">
+                          {opportunity.employment_type === 'UNKNOWN'
+                            ? 'Not confirmed'
+                            : formatLabel(opportunity.employment_type)}
+                        </p>
+                      </div>
+                    )}
+                    <div>
+                      <p className="font-semibold text-gray-900">Work mode</p>
+                      <p className="text-gray-600">
+                        {opportunity.work_mode === 'UNKNOWN'
+                          ? 'Not confirmed'
+                          : formatLabel(opportunity.work_mode)}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="font-semibold text-gray-900">Compensation</p>
+                      <p className="text-gray-600">
+                        {opportunity.compensation_status === 'UNKNOWN'
+                          ? 'Not confirmed'
+                          : opportunity.compensation_status === 'UNPAID'
+                            ? 'Unpaid'
+                            : [opportunity.compensation_amount, opportunity.compensation_currency, opportunity.compensation_period && formatLabel(opportunity.compensation_period)]
+                                .filter(Boolean)
+                                .join(' ') || 'Paid; amount not specified'}
+                      </p>
+                    </div>
+                    {opportunity.duration && (
+                      <div>
+                        <p className="font-semibold text-gray-900">Duration</p>
+                        <p className="text-gray-600">{opportunity.duration}</p>
+                      </div>
+                    )}
+                    {opportunity.experience_requirement && (
+                      <div>
+                        <p className="font-semibold text-gray-900">Experience</p>
+                        <p className="text-gray-600">{opportunity.experience_requirement}</p>
+                      </div>
+                    )}
+                    {opportunity.required_skills.length > 0 && (
+                      <div>
+                        <p className="font-semibold text-gray-900">Required skills</p>
+                        <p className="text-gray-600">{opportunity.required_skills.join(', ')}</p>
+                      </div>
+                    )}
+                  </>
+                )}
+                <section>
+                  <h2 className="text-lg font-semibold text-gray-900">Verified sources</h2>
+                  {opportunity.verified_sources.length ? (
+                    <ul className="mt-2 space-y-2">
+                      {opportunity.verified_sources.map((source) => (
+                        <li key={`${source.url}-${source.verified_at}`}>
+                          <a
+                            href={source.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-2 text-primary-700 underline underline-offset-2"
+                          >
+                            {source.organization || 'Official source'}
+                            <ExternalLink size={15} aria-hidden="true" />
+                          </a>
+                          <p className="text-sm text-gray-600">
+                            Verified {new Intl.DateTimeFormat('en', { dateStyle: 'medium' }).format(new Date(source.verified_at))}
+                          </p>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="mt-2 text-sm text-gray-700">No verified source details are available.</p>
+                  )}
+                </section>
                 {opportunity.status !== 'CLOSED' && applicationUrl ? (
                   <a
                     href={applicationUrl}

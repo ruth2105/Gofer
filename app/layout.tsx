@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
+import { AuthProvider } from "@/components/auth/AuthProvider";
+import { RoleRouteGuard } from "@/components/auth/RoleRouteGuard";
 
 const inter = Inter({ 
   subsets: ["latin"],
@@ -25,7 +27,9 @@ export default function RootLayout({
         className={`${inter.variable} font-sans antialiased bg-brand-light`}
         suppressHydrationWarning
       >
-        {children}
+        <AuthProvider>
+          <RoleRouteGuard>{children}</RoleRouteGuard>
+        </AuthProvider>
       </body>
     </html>
   );

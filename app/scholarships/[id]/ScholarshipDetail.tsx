@@ -12,15 +12,23 @@ import { Calendar, MapPin, Award, CheckCircle2, ExternalLink, ArrowLeft, Clock }
 import { formatDate, calculateDaysUntil } from '@/lib/utils';
 import { getScholarship } from '@/lib/api/scholarships';
 import { Scholarship } from '@/types';
+import { getApiErrorMessage } from '@/lib/api/errors';
 
 const subscribeToNothing = () => () => {};
 const getClientSnapshot = () => true;
 const getServerSnapshot = () => false;
 
+function formatNationalityCode(code: string): string {
+  if (!/^[A-Z]{2}$/.test(code)) return code;
+  const countryName = new Intl.DisplayNames(['en'], { type: 'region' }).of(code);
+  return countryName && countryName !== code ? `${countryName} (${code})` : code;
+}
+
 export default function ScholarshipDetail({ id }: { id: string }) {
   const [scholarship, setScholarship] = useState<Scholarship | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
+  const [loadErrorMessage, setLoadErrorMessage] = useState('');
   const [notFound, setNotFound] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
   const mounted = useSyncExternalStore(
@@ -41,6 +49,7 @@ export default function ScholarshipDetail({ id }: { id: string }) {
           setNotFound(true);
         } else {
           setLoadError(true);
+          setLoadErrorMessage(getApiErrorMessage(error, 'Scholarship details could not be loaded.'));
         }
       })
       .finally(() => {
@@ -71,12 +80,13 @@ export default function ScholarshipDetail({ id }: { id: string }) {
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center" role="alert">
             <h1 className="text-2xl font-bold text-gray-900 mb-4">Scholarship details could not be loaded</h1>
-            <p className="text-gray-600 mb-4">Please check your connection and try again.</p>
+            <p className="text-gray-600 mb-4">{loadErrorMessage}</p>
             <Button
               variant="primary"
               onClick={() => {
                 setLoading(true);
                 setLoadError(false);
+                setLoadErrorMessage('');
                 setNotFound(false);
                 setRetryCount((count) => count + 1);
               }}
@@ -193,14 +203,49 @@ export default function ScholarshipDetail({ id }: { id: string }) {
                     {/* Eligibility */}
                     <div>
                       <h3 className="text-xl font-semibold text-gray-900 mb-3">Eligibility Requirements</h3>
-                      <ul className="space-y-2">
-                        {scholarship.eligibility.map((req, idx) => (
-                          <li key={idx} className="flex items-start">
-                            <CheckCircle2 size={20} className="text-green-600 mr-2 mt-0.5 flex-shrink-0" />
-                            <span className="text-gray-700">{req}</span>
-                          </li>
-                        ))}
-                      </ul>
+                      {scholarship.eligibility.length > 0 ? (
+                        <ul className="space-y-2">
+                          {scholarship.eligibility.map((req, idx) => (
+                            <li key={idx} className="flex items-start">
+                              <CheckCircle2 size={20} className="text-green-600 mr-2 mt-0.5 flex-shrink-0" />
+                              <span className="text-gray-700">{req}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="text-gray-700">Eligibility details are not provided in this listing. Confirm them with the official provider.</p>
+                      )}
+                      <p className="mt-3 text-gray-700">
+                        {scholarship.nationalityEligibility === 'ALL'
+                          ? 'Open to all nationalities, subject to any exclusions listed below.'
+                          : scholarship.nationalityEligibility === 'SPECIFIC'
+                            ? 'Nationality eligibility is limited to the confirmed countries listed below.'
+                            : 'Nationality eligibility has not been confirmed. Check directly with the scholarship provider.'}
+                      </p>
+                      {scholarship.eligibleNationalities && scholarship.eligibleNationalities.length > 0 && (
+                        <p className="mt-2 text-gray-700">
+                          Eligible: {scholarship.eligibleNationalities.map(formatNationalityCode).join(', ')}.
+                        </p>
+                      )}
+                      {scholarship.excludedNationalities && scholarship.excludedNationalities.length > 0 && (
+                        <p className="mt-2 text-gray-700">
+                          Excluded: {scholarship.excludedNationalities.map(formatNationalityCode).join(', ')}.
+                        </p>
+                      )}
+                    </div>
+                    <div>
+                      <h3 className="text-xl font-semibold text-gray-900 mb-3">Required Documents</h3>
+                      {scholarship.documentsRequired && scholarship.documentsRequired.length > 0 ? (
+                        <ul className="list-inside list-disc space-y-2 text-gray-700">
+                          {scholarship.documentsRequired.map((document, index) => (
+                            <li key={`${document}-${index}`}>{document}</li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="text-gray-700">
+                          Required documents are not specified in this listing. Confirm the current requirements with the official provider.
+                        </p>
+                      )}
                     </div>
 
                     {/* Fields of Study */}
@@ -212,6 +257,31 @@ export default function ScholarshipDetail({ id }: { id: string }) {
                         ))}
                       </div>
                     </div>
+                    <section>
+                      <h3 className="text-xl font-semibold text-gray-900 mb-3">Verified sources</h3>
+                      {scholarship.verifiedSources && scholarship.verifiedSources.length > 0 ? (
+                        <ul className="space-y-2">
+                          {scholarship.verifiedSources.map((source) => (
+                            <li key={`${source.url}-${source.verified_at}`}>
+                              <a
+                                href={source.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-2 text-primary-700 underline underline-offset-2"
+                              >
+                                {source.organization || 'Official source'}
+                                <ExternalLink size={15} aria-hidden="true" />
+                              </a>
+                              <p className="text-sm text-gray-600">
+                                Verified {new Intl.DateTimeFormat('en', { dateStyle: 'medium' }).format(new Date(source.verified_at))}
+                              </p>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="text-gray-700">No verified source details are available for this scholarship.</p>
+                      )}
+                    </section>
                   </div>
                 </CardContent>
               </Card>

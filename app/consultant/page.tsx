@@ -39,6 +39,7 @@ export default function ConsultantDashboardPage() {
   const [user, setUser] = useState<UserApiRecord | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [authError, setAuthError] = useState(false);
+  const [authErrorMessage, setAuthErrorMessage] = useState('');
   const [authRetryKey, setAuthRetryKey] = useState(0);
   const [forbidden, setForbidden] = useState(false);
   const [applications, setApplications] = useState<PaginatedResponse<ConsultantApplicationApiRecord> | null>(null);
@@ -71,6 +72,7 @@ export default function ConsultantDashboardPage() {
           router.replace('/student/login');
         } else {
           setAuthError(true);
+          setAuthErrorMessage(getApiErrorMessage(error, 'Your account could not be loaded.'));
         }
       })
       .finally(() => {
@@ -156,11 +158,12 @@ export default function ConsultantDashboardPage() {
   ) : authError ? (
     <div className="py-16 text-center" role="alert">
       <h1 className="text-2xl font-bold text-gray-900">Your account could not be loaded</h1>
-      <p className="mt-2 text-gray-600">Please check your connection and try again.</p>
+      <p className="mt-2 text-gray-600">{authErrorMessage}</p>
       <Button
         className="mt-5"
         onClick={() => {
           setAuthError(false);
+          setAuthErrorMessage('');
           setAuthLoading(true);
           setAuthRetryKey((key) => key + 1);
         }}

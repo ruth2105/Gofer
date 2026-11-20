@@ -24,6 +24,7 @@ const CATEGORY_OPTIONS: Array<{
   value: OpportunityApiRecord['category'];
   label: string;
 }> = [
+  { value: 'JOB', label: 'Jobs' },
   { value: 'INTERNSHIP', label: 'Internships' },
   { value: 'FELLOWSHIP', label: 'Fellowships' },
   { value: 'EXCHANGE', label: 'Exchange programs' },
@@ -38,6 +39,12 @@ type OpportunityFilters = {
   search: string;
   country: string;
   category: OpportunityApiRecord['category'] | '';
+  level: OpportunityApiRecord['level'] | '';
+  nationality: string;
+  funding: OpportunityApiRecord['compensation_status'] | '';
+  employment_type: OpportunityApiRecord['employment_type'] | '';
+  work_mode: OpportunityApiRecord['work_mode'] | '';
+  ordering: string;
 };
 
 function formatLabel(value: string): string {
@@ -54,18 +61,34 @@ function formatDeadline(value: string | null): string {
   return new Intl.DateTimeFormat('en', { dateStyle: 'medium' }).format(date);
 }
 
-export default function OpportunitiesPage() {
+export default function OpportunitiesPage({
+  category,
+}: {
+  category?: 'JOB' | 'INTERNSHIP';
+}) {
   const [results, setResults] = useState<PaginatedResponse<OpportunityApiRecord> | null>(null);
   const [countries, setCountries] = useState<CountryApiRecord[]>([]);
   const [countryError, setCountryError] = useState('');
   const [filters, setFilters] = useState<OpportunityFilters>({
     search: '',
     country: '',
-    category: '',
+    category: category ?? '',
+    level: '',
+    nationality: '',
+    funding: '',
+    employment_type: '',
+    work_mode: '',
+    ordering: 'application_deadline',
   });
   const [searchInput, setSearchInput] = useState('');
   const [countryInput, setCountryInput] = useState('');
-  const [categoryInput, setCategoryInput] = useState<OpportunityFilters['category']>('');
+  const [categoryInput, setCategoryInput] = useState<OpportunityFilters['category']>(category ?? '');
+  const [levelInput, setLevelInput] = useState<OpportunityFilters['level']>('');
+  const [nationalityInput, setNationalityInput] = useState('');
+  const [fundingInput, setFundingInput] = useState<OpportunityFilters['funding']>('');
+  const [employmentTypeInput, setEmploymentTypeInput] = useState<OpportunityFilters['employment_type']>('');
+  const [workModeInput, setWorkModeInput] = useState<OpportunityFilters['work_mode']>('');
+  const [orderingInput, setOrderingInput] = useState('application_deadline');
   const [page, setPage] = useState(1);
   const [requestKey, setRequestKey] = useState(0);
   const [retryKey, setRetryKey] = useState(0);
@@ -96,6 +119,12 @@ export default function OpportunitiesPage() {
       search: filters.search || undefined,
       country: filters.country || undefined,
       category: filters.category || undefined,
+      level: filters.level || undefined,
+      nationality: filters.nationality || undefined,
+      funding: filters.funding || undefined,
+      employment_type: filters.employment_type || undefined,
+      work_mode: filters.work_mode || undefined,
+      ordering: filters.ordering || undefined,
     })
       .then((response) => {
         if (active) setResults(response);
@@ -119,7 +148,13 @@ export default function OpportunitiesPage() {
     setFilters({
       search: searchInput.trim(),
       country: countryInput.trim(),
-      category: categoryInput,
+      category: category ?? categoryInput,
+      level: levelInput,
+      nationality: nationalityInput.trim(),
+      funding: fundingInput,
+      employment_type: employmentTypeInput,
+      work_mode: workModeInput,
+      ordering: orderingInput,
     });
     setPage(1);
     setLoading(true);
@@ -130,8 +165,24 @@ export default function OpportunitiesPage() {
   const clearFilters = () => {
     setSearchInput('');
     setCountryInput('');
-    setCategoryInput('');
-    setFilters({ search: '', country: '', category: '' });
+    setCategoryInput(category ?? '');
+    setLevelInput('');
+    setNationalityInput('');
+    setFundingInput('');
+    setEmploymentTypeInput('');
+    setWorkModeInput('');
+    setOrderingInput('application_deadline');
+    setFilters({
+      search: '',
+      country: '',
+      category: category ?? '',
+      level: '',
+      nationality: '',
+      funding: '',
+      employment_type: '',
+      work_mode: '',
+      ordering: 'application_deadline',
+    });
     setPage(1);
     setLoading(true);
     setErrorMessage('');
@@ -160,10 +211,14 @@ export default function OpportunitiesPage() {
               Learn. Prepare. Apply. Achieve.
             </p>
             <h1 className="text-4xl font-bold tracking-tight sm:text-5xl">
-              Opportunities
+              {category === 'JOB' ? 'Jobs' : category === 'INTERNSHIP' ? 'Internships' : 'Opportunities'}
             </h1>
             <p className="mt-4 max-w-2xl text-lg leading-relaxed text-gray-200">
-              Explore published internships, fellowships, exchange programs, grants, and more.
+              {category === 'JOB'
+                ? 'Explore verified job opportunities from organizations and employers.'
+                : category === 'INTERNSHIP'
+                  ? 'Explore current internships and early-career opportunities.'
+                  : 'Explore published jobs, internships, fellowships, exchange programs, grants, and more.'}
               Listings are reviewed before they are made public.
             </p>
           </div>
@@ -172,7 +227,7 @@ export default function OpportunitiesPage() {
         <section className="border-b border-gray-200 bg-white py-6" aria-label="Opportunity filters">
           <form
             onSubmit={submitFilters}
-            className="mx-auto grid max-w-7xl gap-4 px-4 sm:px-6 md:grid-cols-2 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_auto_auto] lg:items-end lg:px-8"
+            className="mx-auto grid max-w-7xl gap-4 px-4 sm:px-6 md:grid-cols-2 lg:grid-cols-4 lg:items-end lg:px-8"
           >
             <Input
               label="Search opportunities"
@@ -206,13 +261,82 @@ export default function OpportunitiesPage() {
                 </p>
               )}
             </div>
+            {!category && (
+              <Select
+                label="Category"
+                value={categoryInput}
+                onChange={(event) => setCategoryInput(event.target.value as OpportunityFilters['category'])}
+                options={[
+                  { value: '', label: 'All categories' },
+                  ...CATEGORY_OPTIONS,
+                ]}
+              />
+            )}
             <Select
-              label="Category"
-              value={categoryInput}
-              onChange={(event) => setCategoryInput(event.target.value as OpportunityFilters['category'])}
+              label="Education level"
+              value={levelInput}
+              onChange={(event) => setLevelInput(event.target.value as OpportunityFilters['level'])}
               options={[
-                { value: '', label: 'All categories' },
-                ...CATEGORY_OPTIONS,
+                { value: '', label: 'Any level' },
+                { value: 'HIGH_SCHOOL', label: 'High school' },
+                { value: 'UNDERGRADUATE', label: 'Undergraduate' },
+                { value: 'GRADUATE', label: 'Graduate' },
+                { value: 'POSTGRADUATE', label: 'Postgraduate' },
+                { value: 'DOCTORATE', label: 'Doctorate' },
+                { value: 'ALL_LEVELS', label: 'All levels' },
+              ]}
+            />
+            <Input
+              label="Nationality (ISO code)"
+              placeholder="ET"
+              maxLength={2}
+              value={nationalityInput}
+              onChange={(event) => setNationalityInput(event.target.value.toUpperCase())}
+            />
+            <Select
+              label="Compensation"
+              value={fundingInput}
+              onChange={(event) => setFundingInput(event.target.value as OpportunityFilters['funding'])}
+              options={[
+                { value: '', label: 'Any compensation' },
+                { value: 'PAID', label: 'Paid' },
+                { value: 'UNPAID', label: 'Unpaid' },
+                { value: 'UNKNOWN', label: 'Not confirmed' },
+              ]}
+            />
+            <Select
+              label="Employment type"
+              value={employmentTypeInput}
+              onChange={(event) => setEmploymentTypeInput(event.target.value as OpportunityFilters['employment_type'])}
+              options={[
+                { value: '', label: 'Any employment type' },
+                { value: 'FULL_TIME', label: 'Full time' },
+                { value: 'PART_TIME', label: 'Part time' },
+                { value: 'CONTRACT', label: 'Contract' },
+                { value: 'TEMPORARY', label: 'Temporary' },
+                { value: 'OTHER', label: 'Other' },
+                { value: 'UNKNOWN', label: 'Not confirmed' },
+              ]}
+            />
+            <Select
+              label="Work mode"
+              value={workModeInput}
+              onChange={(event) => setWorkModeInput(event.target.value as OpportunityFilters['work_mode'])}
+              options={[
+                { value: '', label: 'Any work mode' },
+                { value: 'ON_SITE', label: 'On-site' },
+                { value: 'HYBRID', label: 'Hybrid' },
+                { value: 'REMOTE', label: 'Remote' },
+                { value: 'UNKNOWN', label: 'Not confirmed' },
+              ]}
+            />
+            <Select
+              label="Sort by deadline"
+              value={orderingInput}
+              onChange={(event) => setOrderingInput(event.target.value)}
+              options={[
+                { value: 'application_deadline', label: 'Soonest deadline' },
+                { value: '-application_deadline', label: 'Latest deadline' },
               ]}
             />
             <Button type="submit" className="w-full lg:w-auto">
@@ -276,6 +400,25 @@ export default function OpportunitiesPage() {
                           <p className="flex items-center gap-2">
                             <MapPin size={16} aria-hidden="true" />
                             {opportunity.country}
+                          </p>
+                        )}
+                        {opportunity.location && (
+                          <p className="flex items-center gap-2">
+                            <MapPin size={16} aria-hidden="true" />
+                            {opportunity.location}
+                          </p>
+                        )}
+                        {(opportunity.category === 'JOB' || opportunity.category === 'INTERNSHIP') && (
+                          <p>
+                            {opportunity.category === 'JOB'
+                              ? opportunity.employment_type === 'UNKNOWN'
+                                ? 'Employment type not confirmed'
+                                : formatLabel(opportunity.employment_type)
+                              : 'Internship'}
+                            {' · '}
+                            {opportunity.compensation_status === 'UNKNOWN'
+                              ? 'Compensation not confirmed'
+                              : formatLabel(opportunity.compensation_status)}
                           </p>
                         )}
                         <p className="flex items-center gap-2">

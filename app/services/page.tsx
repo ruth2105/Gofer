@@ -10,11 +10,13 @@ import { Briefcase, Search } from 'lucide-react';
 import { getServices } from '@/lib/api/catalogues';
 import { ServiceApiRecord } from '@/lib/api/client';
 import { FeedbackState } from '@/components/ui/FeedbackState';
+import { getApiErrorMessage } from '@/lib/api/errors';
 
 export default function ServicesPage() {
   const [services, setServices] = useState<ServiceApiRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
+  const [loadErrorMessage, setLoadErrorMessage] = useState('');
   const [query, setQuery] = useState('');
   const [retryCount, setRetryCount] = useState(0);
 
@@ -24,8 +26,11 @@ export default function ServicesPage() {
       .then((items) => {
         if (active) setServices(items);
       })
-      .catch(() => {
-        if (active) setLoadError(true);
+      .catch((error: unknown) => {
+        if (active) {
+          setLoadError(true);
+          setLoadErrorMessage(getApiErrorMessage(error, 'Services could not be loaded.'));
+        }
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -81,12 +86,13 @@ export default function ServicesPage() {
             <p className="py-12 text-center text-gray-600" role="status">Loading services…</p>
           ) : loadError ? (
             <div className="py-12 text-center" role="alert">
-              <p className="mb-4 text-gray-700">Services could not be loaded. Please try again.</p>
+              <p className="mb-4 text-gray-700">{loadErrorMessage}</p>
               <Button
                 variant="primary"
                 onClick={() => {
                   setLoading(true);
                   setLoadError(false);
+                  setLoadErrorMessage('');
                   setRetryCount((count) => count + 1);
                 }}
               >

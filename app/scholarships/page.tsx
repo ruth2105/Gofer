@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useSyncExternalStore } from 'react';
+import { FormEvent, useState, useEffect, useSyncExternalStore } from 'react';
 import Link from 'next/link';
 import { Navigation } from '@/components/layout/Navigation';
 import { Footer } from '@/components/layout/Footer';
@@ -9,11 +9,12 @@ import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
-import { Search, Filter, Award, Calendar, MapPin, ExternalLink } from 'lucide-react';
-import { getScholarships } from '@/lib/api/scholarships';
+import { Search, Award, Calendar, MapPin, ExternalLink } from 'lucide-react';
+import { getScholarshipPage } from '@/lib/api/scholarships';
 import { formatDate, calculateDaysUntil } from '@/lib/utils';
 import { Scholarship } from '@/types';
 import { FeedbackState } from '@/components/ui/FeedbackState';
+import { getApiErrorMessage } from '@/lib/api/errors';
 
 const subscribeToNothing = () => () => {};
 const getClientSnapshot = () => true;
@@ -21,13 +22,25 @@ const getServerSnapshot = () => false;
 
 export default function ScholarshipsPage() {
   const [scholarships, setScholarships] = useState<Scholarship[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
+  const [hasNextPage, setHasNextPage] = useState(false);
+  const [hasPreviousPage, setHasPreviousPage] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
+  const [loadErrorMessage, setLoadErrorMessage] = useState('');
   const [retryCount, setRetryCount] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
-  const [countryFilter, setCountryFilter] = useState('all');
+  const [countryFilter, setCountryFilter] = useState('');
   const [typeFilter, setTypeFilter] = useState('all');
   const [levelFilter, setLevelFilter] = useState('all');
+  const [page, setPage] = useState(1);
+  const [appliedFilters, setAppliedFilters] = useState({
+    search: '',
+    country: '',
+    type: '',
+    level: '',
+    ordering: 'application_deadline',
+  });
   const mounted = useSyncExternalStore(
     subscribeToNothing,
     getClientSnapshot,
@@ -36,12 +49,27 @@ export default function ScholarshipsPage() {
 
   useEffect(() => {
     let active = true;
-    getScholarships()
-      .then((items) => {
-        if (active) setScholarships(items);
+    getScholarshipPage({
+      page,
+      search: appliedFilters.search || undefined,
+      country: appliedFilters.country || undefined,
+      type: appliedFilters.type || undefined,
+      level: appliedFilters.level || undefined,
+      ordering: appliedFilters.ordering || undefined,
+    })
+      .then((response) => {
+        if (active) {
+          setScholarships(response.results);
+          setTotalCount(response.count);
+          setHasNextPage(Boolean(response.next));
+          setHasPreviousPage(Boolean(response.previous));
+        }
       })
-      .catch(() => {
-        if (active) setLoadError(true);
+      .catch((error: unknown) => {
+        if (active) {
+          setLoadError(true);
+          setLoadErrorMessage(getApiErrorMessage(error, 'Scholarships could not be loaded.'));
+        }
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -50,23 +78,47 @@ export default function ScholarshipsPage() {
     return () => {
       active = false;
     };
-  }, [retryCount]);
+  }, [appliedFilters, page, retryCount]);
 
-  const countries = ['all', ...Array.from(new Set(scholarships.map(s => s.country)))];
-  const types = ['all', ...Array.from(new Set(scholarships.map(s => s.type)))];
-  const levels = ['all', ...Array.from(new Set(scholarships.map(s => s.level)))];
+  const submitFilters = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setPage(1);
+    setLoading(true);
+    setLoadError(false);
+    setLoadErrorMessage('');
+    setAppliedFilters({
+      search: searchQuery.trim(),
+      country: countryFilter.trim(),
+      type: typeFilter === 'all' ? '' : typeFilter,
+      level: levelFilter === 'all' ? '' : levelFilter,
+      ordering: appliedFilters.ordering || 'application_deadline',
+    });
+  };
 
-  // Filter scholarships
-  const filteredScholarships = scholarships.filter(scholarship => {
-    const matchesSearch = scholarship.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         scholarship.provider.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         scholarship.description.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesCountry = countryFilter === 'all' || scholarship.country === countryFilter;
-    const matchesType = typeFilter === 'all' || scholarship.type === typeFilter;
-    const matchesLevel = levelFilter === 'all' || scholarship.level === levelFilter;
-    
-    return matchesSearch && matchesCountry && matchesType && matchesLevel;
-  });
+  const clearFilters = () => {
+    setSearchQuery('');
+    setCountryFilter('');
+    setTypeFilter('all');
+    setLevelFilter('all');
+    setPage(1);
+    setLoading(true);
+    setLoadError(false);
+    setLoadErrorMessage('');
+    setAppliedFilters({
+      search: '',
+      country: '',
+      type: '',
+      level: '',
+      ordering: 'application_deadline',
+    });
+  };
+
+  const changePage = (nextPage: number) => {
+    setPage(nextPage);
+    setLoading(true);
+    setLoadError(false);
+    setLoadErrorMessage('');
+  };
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -91,7 +143,7 @@ export default function ScholarshipsPage() {
       {/* Filters */}
       <section className="bg-white shadow-md sticky top-16 z-30" aria-label="Scholarship search filters">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <form onSubmit={submitFilters} className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div className="md:col-span-1">
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
@@ -105,27 +157,65 @@ export default function ScholarshipsPage() {
                 />
               </div>
             </div>
-            <Select
+            <Input
               label="Country"
+              type="search"
+              placeholder="Any country"
               value={countryFilter}
               onChange={(e) => setCountryFilter(e.target.value)}
-              options={countries.map(c => ({ value: c, label: c === 'all' ? 'All Countries' : c }))}
             />
             <Select
               label="Scholarship type"
               value={typeFilter}
               onChange={(e) => setTypeFilter(e.target.value)}
-              options={types.map(t => ({ value: t, label: t === 'all' ? 'All Types' : t + ' Scholarship' }))}
+              options={[
+                { value: 'all', label: 'All Types' },
+                { value: 'FULL', label: 'Full Scholarship' },
+                { value: 'PARTIAL', label: 'Partial Scholarship' },
+                { value: 'MERIT', label: 'Merit-Based Scholarship' },
+                { value: 'NEED', label: 'Need-Based Scholarship' },
+                { value: 'RESEARCH', label: 'Research Scholarship' },
+                { value: 'ATHLETIC', label: 'Athletic Scholarship' },
+              ]}
             />
             <Select
               label="Study level"
               value={levelFilter}
               onChange={(e) => setLevelFilter(e.target.value)}
-              options={levels.map(l => ({ value: l, label: l === 'all' ? 'All Levels' : l }))}
+              options={[
+                { value: 'all', label: 'All Levels' },
+                { value: 'UNDERGRADUATE', label: 'Undergraduate' },
+                { value: 'GRADUATE', label: 'Graduate' },
+                { value: 'POSTGRADUATE', label: 'Postgraduate' },
+                { value: 'DOCTORATE', label: 'PhD' },
+                { value: 'ALL', label: 'All Levels' },
+              ]}
             />
-          </div>
-          <div className="mt-4 text-sm text-gray-600">
-            {loading ? 'Loading scholarships…' : `Showing ${filteredScholarships.length} of ${scholarships.length} scholarships`}
+            <Select
+              label="Sort by deadline"
+              value={appliedFilters.ordering}
+              onChange={(event) => {
+                setAppliedFilters((current) => ({
+                  ...current,
+                  ordering: event.target.value,
+                }));
+                setPage(1);
+                setLoading(true);
+                setLoadError(false);
+                setLoadErrorMessage('');
+              }}
+              options={[
+                { value: 'application_deadline', label: 'Soonest deadline' },
+                { value: '-application_deadline', label: 'Latest deadline' },
+              ]}
+            />
+            <div className="flex items-end gap-2 md:col-span-4">
+              <Button type="submit">Apply filters</Button>
+              <Button type="button" variant="outline" onClick={clearFilters}>Clear</Button>
+            </div>
+          </form>
+          <div className="mt-4 text-sm text-gray-600" aria-live="polite">
+            {loading ? 'Loading scholarships…' : `Showing ${scholarships.length} of ${totalCount} scholarships`}
           </div>
         </div>
       </section>
@@ -136,12 +226,13 @@ export default function ScholarshipsPage() {
           {loadError ? (
             <div className="text-center py-12" role="alert">
               <h3 className="text-xl font-semibold text-gray-700 mb-2">Scholarships could not be loaded</h3>
-              <p className="text-gray-600 mb-4">Please check your connection and try again.</p>
+              <p className="text-gray-600 mb-4">{loadErrorMessage}</p>
               <Button
                 variant="primary"
                 onClick={() => {
                   setLoading(true);
                   setLoadError(false);
+                  setLoadErrorMessage('');
                   setRetryCount((count) => count + 1);
                 }}
               >
@@ -150,21 +241,17 @@ export default function ScholarshipsPage() {
             </div>
           ) : loading ? (
             <p className="text-center py-12 text-gray-600" role="status">Loading scholarships…</p>
-          ) : scholarships.length === 0 ? (
+          ) : totalCount === 0 ? (
             <FeedbackState
               variant="empty"
-              title="No scholarships are published yet"
-              description="The catalogue is connected, but there are no current records to display. Check back later or confirm opportunities with the relevant provider."
+              title={[appliedFilters.search, appliedFilters.country, appliedFilters.type, appliedFilters.level].some(Boolean) ? 'No scholarships found' : 'No scholarships are published yet'}
+              description={[appliedFilters.search, appliedFilters.country, appliedFilters.type, appliedFilters.level].some(Boolean)
+                ? 'No published scholarships match these filters. Adjust your search or clear the filters.'
+                : 'The catalogue is connected, but there are no current records to display. Check back later.'}
             />
-          ) : filteredScholarships.length === 0 ? (
-            <div className="text-center py-12">
-              <Filter className="mx-auto mb-4 text-gray-400" size={48} />
-              <h3 className="text-xl font-semibold text-gray-700 mb-2">No scholarships found</h3>
-              <p className="text-gray-600">Try adjusting your filters or search query</p>
-            </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {filteredScholarships.map((scholarship) => {
+              {scholarships.map((scholarship) => {
                 const daysLeft = mounted ? calculateDaysUntil(scholarship.deadline) : 0;
                 const isUrgent = daysLeft > 0 && daysLeft <= 30;
                 
@@ -235,6 +322,25 @@ export default function ScholarshipsPage() {
                 );
               })}
             </div>
+          )}
+          {!loadError && !loading && totalCount > 0 && (
+            <nav className="mt-8 flex items-center justify-between" aria-label="Scholarship pages">
+              <Button
+                variant="outline"
+                disabled={!hasPreviousPage}
+                onClick={() => changePage(Math.max(1, page - 1))}
+              >
+                Previous
+              </Button>
+              <span className="text-sm text-gray-600">Page {page}</span>
+              <Button
+                variant="outline"
+                disabled={!hasNextPage}
+                onClick={() => changePage(page + 1)}
+              >
+                Next
+              </Button>
+            </nav>
           )}
         </div>
       </section>

@@ -16,9 +16,15 @@ async function getAllPages<T>(
 
   do {
     response = await fetchPage(page);
+    if (!Array.isArray(response.results) || !Number.isInteger(response.count)) {
+      throw new Error('The catalogue API returned an invalid paginated response.');
+    }
     records.push(...response.results);
+    if (response.next && response.results.length === 0) {
+      throw new Error('The catalogue API returned an empty page with more results available.');
+    }
     page += 1;
-  } while (response.next);
+  } while (response.next && records.length < response.count);
 
   return records;
 }

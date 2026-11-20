@@ -11,6 +11,13 @@ import axios, {
 
 const API_BASE_URL = '/api/v1';
 
+export interface VerifiedSourceApiRecord {
+  url: string;
+  organization: string;
+  verified_at: string;
+  verified_by: string;
+}
+
 export interface ScholarshipApiRecord {
   id: string;
   slug: string;
@@ -30,6 +37,11 @@ export interface ScholarshipApiRecord {
   is_featured: boolean;
   eligibility?: string[];
   fields?: string[];
+  nationality_eligibility?: 'ALL' | 'SPECIFIC' | 'NOT_CONFIRMED';
+  target_countries?: string[];
+  excluded_countries?: string[];
+  documents_required?: string[];
+  verified_sources?: VerifiedSourceApiRecord[];
 }
 
 export interface UniversityApiRecord {
@@ -109,10 +121,27 @@ export interface OpportunityApiRecord {
   description: string;
   organization: string;
   country: string;
-  category: 'INTERNSHIP' | 'FELLOWSHIP' | 'EXCHANGE' | 'TRAINING' | 'RESEARCH' | 'COMPETITION' | 'GRANT' | 'OTHER';
+  location: string;
+  category: 'JOB' | 'INTERNSHIP' | 'FELLOWSHIP' | 'EXCHANGE' | 'TRAINING' | 'RESEARCH' | 'COMPETITION' | 'GRANT' | 'OTHER';
   level: 'HIGH_SCHOOL' | 'UNDERGRADUATE' | 'GRADUATE' | 'POSTGRADUATE' | 'DOCTORATE' | 'ALL_LEVELS';
   eligibility: string[];
+  eligibility_scope?: 'UNSPECIFIED' | 'ETHIOPIA_ONLY' | 'ETHIOPIA_AND_OTHERS' | 'OTHER_NATIONALITIES';
+  eligible_nationalities?: string[];
+  excluded_nationalities?: string[];
+  eligibility_notes?: string;
   benefits: string[];
+  documents_required?: string[];
+  required_skills: string[];
+  employment_type: 'UNKNOWN' | 'FULL_TIME' | 'PART_TIME' | 'CONTRACT' | 'TEMPORARY' | 'OTHER';
+  work_mode: 'UNKNOWN' | 'ON_SITE' | 'HYBRID' | 'REMOTE';
+  compensation_status: 'UNKNOWN' | 'PAID' | 'UNPAID';
+  compensation_amount: string | null;
+  compensation_currency: string;
+  compensation_period: 'HOURLY' | 'MONTHLY' | 'ANNUAL' | 'PROJECT' | 'OTHER' | '';
+  duration: string;
+  experience_requirement: string;
+  minimum_experience_years: number | null;
+  verified_sources: VerifiedSourceApiRecord[];
   application_deadline: string | null;
   application_url: string;
   official_website: string;
@@ -163,6 +192,83 @@ export interface StudentProfileApiRecord {
   gmat_score: number | null;
   sat_score: number | null;
   profile_completed: boolean;
+}
+
+export interface EducationApiRecord {
+  id: string;
+  institution_name: string;
+  degree_level: 'HIGH_SCHOOL' | 'ASSOCIATE' | 'BACHELOR' | 'MASTER' | 'DOCTORATE' | 'DIPLOMA' | 'CERTIFICATE';
+  field_of_study: string;
+  country: string | null;
+  country_name?: string | null;
+  start_date: string;
+  end_date: string | null;
+  is_current: boolean;
+  gpa: string | number | null;
+  gpa_scale: string | number;
+  achievements: string;
+  description: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface WorkExperienceApiRecord {
+  id: string;
+  company_name: string;
+  position_title: string;
+  employment_type: 'FULL_TIME' | 'PART_TIME' | 'INTERNSHIP' | 'CONTRACT' | 'FREELANCE' | 'VOLUNTEER';
+  location: string;
+  country: string | null;
+  country_name?: string | null;
+  start_date: string;
+  end_date: string | null;
+  is_current: boolean;
+  description: string;
+  skills_used: string[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SkillApiRecord {
+  id: string;
+  name: string;
+  category: 'TECHNICAL' | 'LANGUAGE' | 'SOFT_SKILL' | 'ACADEMIC' | 'OTHER';
+  proficiency: 'BEGINNER' | 'INTERMEDIATE' | 'ADVANCED' | 'EXPERT';
+  years_of_experience: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface StudentProfileDetailApiRecord extends StudentProfileApiRecord {
+  education_history: EducationApiRecord[];
+  work_experience: WorkExperienceApiRecord[];
+  skills: SkillApiRecord[];
+}
+
+export interface DocumentApiRecord {
+  id: string;
+  user?: string;
+  owner_email?: string;
+  owner_name?: string;
+  document_type: 'PASSPORT' | 'TRANSCRIPT' | 'DIPLOMA' | 'RECOMMENDATION' | 'PERSONAL_STATEMENT' | 'CV' | 'FINANCIAL' | 'TEST_SCORE' | 'PHOTO' | 'OTHER';
+  title: string;
+  description: string;
+  file: string;
+  file_size: number;
+  file_size_mb: number;
+  file_extension: string;
+  application?: string | null;
+  consultation?: string | null;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'EXPIRED';
+  verified_by?: string | null;
+  verified_by_name?: string | null;
+  verification_notes?: string | null;
+  verified_at?: string | null;
+  expiry_date?: string | null;
+  is_expired: boolean;
+  is_confidential: boolean;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface StudentProfileCompletionApiRecord {
@@ -235,9 +341,33 @@ export interface UserApiRecord {
   last_name: string;
   full_name: string;
   phone_number: string;
-  role: string;
+  role: 'STUDENT' | 'CONSULTANT' | 'ADMIN' | 'SUPERADMIN';
   is_verified: boolean;
   date_joined: string;
+}
+
+export interface ConsultantProfileApiRecord {
+  company_name: string;
+  job_title: string;
+  years_of_experience: number;
+  bio: string;
+  specializations: string[];
+  languages: string[];
+  expertise_countries: string[];
+  expertise_fields: string[];
+  consultation_rate: string;
+  availability_hours: string;
+  timezone: string;
+  verification_status: 'PENDING' | 'VERIFIED' | 'REJECTED';
+  is_available: boolean;
+  is_featured: boolean;
+  total_consultations: number;
+  total_students_helped: number;
+  average_rating: string;
+  success_rate: string;
+  verified_at: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface ApplicationApiRecord {
@@ -308,6 +438,17 @@ export interface PaginatedResponse<T> {
   results: T[];
 }
 
+export interface SecurityAuditEventApiRecord {
+  id: number;
+  action: string;
+  actor_id: string | null;
+  actor_role: string;
+  target_id: string | null;
+  target_role: string;
+  details: Record<string, unknown>;
+  created_at: string;
+}
+
 const apiClient: AxiosInstance = axios.create({
   baseURL: API_BASE_URL,
   headers: { 'Content-Type': 'application/json' },
@@ -333,6 +474,12 @@ export const clearAuth = (): void => {
   currentUser = null;
   csrfToken = null;
 };
+
+function notifyAuthChanged(): void {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event('gofer:auth-changed'));
+  }
+}
 
 apiClient.interceptors.request.use(
   async (config: InternalAxiosRequestConfig) => {
@@ -398,6 +545,9 @@ apiClient.interceptors.response.use(
     } catch (refreshError) {
       processQueue(refreshError);
       clearAuth();
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new Event('gofer:session-expired'));
+      }
       return Promise.reject(refreshError);
     } finally {
       isRefreshing = false;
@@ -440,12 +590,48 @@ export const api = {
       return response.data;
     },
 
+    requestPasswordReset: async (email: string) => {
+      const response = await apiClient.post<{ message: string }>(
+        '/auth/password/reset/',
+        { email }
+      );
+      return response.data;
+    },
+
+    confirmPasswordReset: async (data: {
+      uid: string;
+      token: string;
+      new_password: string;
+      new_password2: string;
+    }) => {
+      const response = await apiClient.post<{ message: string }>(
+        '/auth/password/reset/confirm/',
+        data
+      );
+      return response.data;
+    },
+
+    changePassword: async (data: {
+      old_password: string;
+      new_password: string;
+      new_password2: string;
+    }) => {
+      const response = await apiClient.post<{ message: string }>(
+        '/auth/password/change/',
+        data
+      );
+      clearAuth();
+      notifyAuthChanged();
+      return response.data;
+    },
+
     login: async (data: { email: string; password: string }) => {
       const response = await apiClient.post<{
         user: UserApiRecord;
         message: string;
       }>('/auth/login/', data);
       currentUser = response.data.user;
+      notifyAuthChanged();
       return response.data;
     },
 
@@ -454,6 +640,7 @@ export const api = {
         await apiClient.post('/auth/logout/', {});
       } finally {
         clearAuth();
+        notifyAuthChanged();
       }
     },
 
@@ -622,6 +809,10 @@ export const api = {
       const response = await apiClient.get<StudentProfileApiRecord>('/students/me/');
       return response.data;
     },
+    detail: async () => {
+      const response = await apiClient.get<StudentProfileDetailApiRecord>('/students/me/detail/');
+      return response.data;
+    },
     updateProfile: async (
       data: Partial<Omit<StudentProfileApiRecord, 'id' | 'profile_completed'>>
     ) => {
@@ -634,9 +825,120 @@ export const api = {
       );
       return response.data;
     },
+    education: {
+      list: async () => {
+        const response = await apiClient.get<EducationApiRecord[]>('/students/education/');
+        return response.data;
+      },
+      create: async (data: Omit<EducationApiRecord, 'id' | 'country_name' | 'created_at' | 'updated_at'>) => {
+        const response = await apiClient.post<EducationApiRecord>('/students/education/', data);
+        return response.data;
+      },
+      update: async (id: string, data: Partial<Omit<EducationApiRecord, 'id' | 'country_name' | 'created_at' | 'updated_at'>>) => {
+        const response = await apiClient.patch<EducationApiRecord>(`/students/education/${id}/`, data);
+        return response.data;
+      },
+      delete: async (id: string) => {
+        const response = await apiClient.delete(`/students/education/${id}/`);
+        return response.data;
+      },
+    },
+    experience: {
+      list: async () => {
+        const response = await apiClient.get<WorkExperienceApiRecord[]>('/students/experience/');
+        return response.data;
+      },
+      create: async (data: Omit<WorkExperienceApiRecord, 'id' | 'country_name' | 'created_at' | 'updated_at'>) => {
+        const response = await apiClient.post<WorkExperienceApiRecord>('/students/experience/', data);
+        return response.data;
+      },
+      update: async (id: string, data: Partial<Omit<WorkExperienceApiRecord, 'id' | 'country_name' | 'created_at' | 'updated_at'>>) => {
+        const response = await apiClient.patch<WorkExperienceApiRecord>(`/students/experience/${id}/`, data);
+        return response.data;
+      },
+      delete: async (id: string) => {
+        const response = await apiClient.delete(`/students/experience/${id}/`);
+        return response.data;
+      },
+    },
+    skills: {
+      list: async () => {
+        const response = await apiClient.get<SkillApiRecord[]>('/students/skills/');
+        return response.data;
+      },
+      create: async (data: { name: string; category?: SkillApiRecord['category']; proficiency?: SkillApiRecord['proficiency']; years_of_experience?: number | null; }) => {
+        const response = await apiClient.post<SkillApiRecord>('/students/skills/', data);
+        return response.data;
+      },
+      update: async (id: string, data: Partial<Pick<SkillApiRecord, 'name' | 'category' | 'proficiency' | 'years_of_experience'>>) => {
+        const response = await apiClient.patch<SkillApiRecord>(`/students/skills/${id}/`, data);
+        return response.data;
+      },
+      delete: async (id: string) => {
+        const response = await apiClient.delete(`/students/skills/${id}/`);
+        return response.data;
+      },
+    },
+  },
+
+  documents: {
+    list: async () => {
+      const response = await apiClient.get<PaginatedResponse<DocumentApiRecord>>('/documents/');
+      return response.data.results;
+    },
+    create: async (data: FormData, onUploadProgress?: (progressEvent: { loaded: number; total?: number | null }) => void) => {
+      const response = await apiClient.post<DocumentApiRecord>('/documents/', data, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        onUploadProgress: (progressEvent) => {
+          onUploadProgress?.(progressEvent);
+        },
+      });
+      return response.data;
+    },
+    update: async (id: string, data: Partial<Pick<DocumentApiRecord, 'title' | 'description' | 'document_type' | 'expiry_date' | 'is_confidential'>>) => {
+      const response = await apiClient.patch<DocumentApiRecord>(`/documents/${id}/`, data);
+      return response.data;
+    },
+    delete: async (id: string) => {
+      const response = await apiClient.delete(`/documents/${id}/`);
+      return response.data;
+    },
+    download: async (id: string) => {
+      const response = await apiClient.get<Blob>(`/documents/${id}/download/`, {
+        responseType: 'blob',
+      });
+      return response.data;
+    },
   },
 
   consultant: {
+    profile: async () => {
+      const response = await apiClient.get<ConsultantProfileApiRecord>(
+        '/consultations/me/'
+      );
+      return response.data;
+    },
+    updateProfile: async (data: Partial<Pick<
+      ConsultantProfileApiRecord,
+      | 'company_name'
+      | 'job_title'
+      | 'years_of_experience'
+      | 'bio'
+      | 'specializations'
+      | 'languages'
+      | 'expertise_countries'
+      | 'expertise_fields'
+      | 'consultation_rate'
+      | 'availability_hours'
+      | 'timezone'
+      | 'is_available'
+    >>) => {
+      const response = await apiClient.patch<ConsultantProfileApiRecord>(
+        '/consultations/me/',
+        data
+      );
+      return response.data;
+    },
     assignedApplications: async (params?: {
       page?: number;
       search?: string;
@@ -664,13 +966,22 @@ export const api = {
       );
       return response.data;
     },
+    auditEvents: async (params?: { page?: number }) => {
+      const response = await apiClient.get<PaginatedResponse<SecurityAuditEventApiRecord>>(
+        '/auth/security/audit/',
+        { params }
+      );
+      return response.data;
+    },
   },
 
   scholarships: {
     list: async (params?: {
       country?: string;
       type?: string;
+      funding?: string;
       level?: string;
+      nationality?: string;
       status?: string;
       is_featured?: boolean;
       search?: string;
@@ -777,6 +1088,12 @@ export const api = {
     list: async (params?: {
       category?: OpportunityApiRecord['category'];
       country?: string;
+      level?: OpportunityApiRecord['level'];
+      education?: OpportunityApiRecord['level'];
+      nationality?: string;
+      funding?: OpportunityApiRecord['compensation_status'];
+      employment_type?: OpportunityApiRecord['employment_type'];
+      work_mode?: OpportunityApiRecord['work_mode'];
       search?: string;
       page?: number;
       ordering?: string;
@@ -799,6 +1116,31 @@ export const api = {
   countries: {
     list: async () => {
       const response = await apiClient.get<CountryApiRecord[]>('/countries/');
+      return response.data;
+    },
+    users: async (params?: { page?: number }) => {
+      const response = await apiClient.get<PaginatedResponse<UserApiRecord>>(
+        '/auth/users/',
+        { params }
+      );
+      return response.data;
+    },
+    updateUser: async (
+      userId: string,
+      data: Partial<Pick<UserApiRecord, 'first_name' | 'last_name' | 'phone_number' | 'role'>>
+        & { is_active?: boolean }
+    ) => {
+      const response = await apiClient.patch<UserApiRecord>(
+        `/auth/users/${userId}/`,
+        data
+      );
+      return response.data;
+    },
+    auditEvents: async (params?: { page?: number }) => {
+      const response = await apiClient.get<PaginatedResponse<SecurityAuditEventApiRecord>>(
+        '/auth/security/audit/',
+        { params }
+      );
       return response.data;
     },
   },

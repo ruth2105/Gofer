@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { ArrowLeft, DollarSign, Globe, MapPin, ExternalLink } from 'lucide-react';
 import { getDestination } from '@/lib/api/catalogues';
 import { DestinationApiRecord } from '@/lib/api/client';
+import { getApiErrorMessage } from '@/lib/api/errors';
 
 function formatCost(value: string, period: string): string {
   const amount = Number(value);
@@ -25,6 +26,7 @@ export default function DestinationDetail({ id }: { id: string }) {
   const [destination, setDestination] = useState<DestinationApiRecord | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
+  const [loadErrorMessage, setLoadErrorMessage] = useState('');
   const [notFound, setNotFound] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
 
@@ -40,6 +42,7 @@ export default function DestinationDetail({ id }: { id: string }) {
           setNotFound(true);
         } else {
           setLoadError(true);
+          setLoadErrorMessage(getApiErrorMessage(error, 'Destination details could not be loaded.'));
         }
       })
       .finally(() => {
@@ -70,12 +73,13 @@ export default function DestinationDetail({ id }: { id: string }) {
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center" role="alert">
             <h1 className="mb-4 text-2xl font-bold text-gray-900">Destination details could not be loaded</h1>
-            <p className="mb-4 text-gray-600">Please check your connection and try again.</p>
+            <p className="mb-4 text-gray-600">{loadErrorMessage}</p>
             <Button
               variant="primary"
               onClick={() => {
                 setLoading(true);
                 setLoadError(false);
+                setLoadErrorMessage('');
                 setRetryCount((count) => count + 1);
               }}
             >

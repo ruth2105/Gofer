@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { GraduationCap, Search } from 'lucide-react';
 import { getUniversities } from '@/lib/api/catalogues';
 import { UniversityApiRecord } from '@/lib/api/client';
+import { getApiErrorMessage } from '@/lib/api/errors';
 
 function formatTuition(value: string | null): string {
   const amount = Number(value);
@@ -24,6 +25,7 @@ export default function UniversitiesPage() {
   const [universities, setUniversities] = useState<UniversityApiRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
+  const [loadErrorMessage, setLoadErrorMessage] = useState('');
   const [query, setQuery] = useState('');
   const [retryCount, setRetryCount] = useState(0);
 
@@ -33,8 +35,11 @@ export default function UniversitiesPage() {
       .then((items) => {
         if (active) setUniversities(items);
       })
-      .catch(() => {
-        if (active) setLoadError(true);
+      .catch((error: unknown) => {
+        if (active) {
+          setLoadError(true);
+          setLoadErrorMessage(getApiErrorMessage(error, 'Universities could not be loaded.'));
+        }
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -90,12 +95,13 @@ export default function UniversitiesPage() {
             <p className="py-12 text-center text-gray-600" role="status">Loading universities…</p>
           ) : loadError ? (
             <div className="py-12 text-center" role="alert">
-              <p className="mb-4 text-gray-700">Universities could not be loaded. Please try again.</p>
+              <p className="mb-4 text-gray-700">{loadErrorMessage}</p>
               <Button
                 variant="primary"
                 onClick={() => {
                   setLoading(true);
                   setLoadError(false);
+                  setLoadErrorMessage('');
                   setRetryCount((count) => count + 1);
                 }}
               >
