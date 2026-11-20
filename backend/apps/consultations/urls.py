@@ -5,6 +5,7 @@ from .views import (
     ConsultantAssignedConsultationsView,
     ConsultantConsultationActionView,
     ConsultantDirectoryView,
+    ConsultantProfileView,
     StudentConsultationViewSet,
 )
 
@@ -14,6 +15,7 @@ router = DefaultRouter()
 router.register(r'', StudentConsultationViewSet, basename='consultation')
 
 urlpatterns = [
+    path('me/', ConsultantProfileView.as_view(), name='consultant-profile'),
     path('consultants/', ConsultantDirectoryView.as_view(), name='consultant-directory'),
     path('consultant/assigned/', ConsultantAssignedConsultationsView.as_view(), name='consultant-assigned'),
     path(

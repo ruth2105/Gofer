@@ -46,7 +46,64 @@ class IsConsultant(permissions.BasePermission):
 
 
 class IsAdminUser(permissions.BasePermission):
-    """Only allow admin users."""
+    """Allow ADMIN and SUPERADMIN accounts."""
     
     def has_permission(self, request, view):
         return request.user and request.user.is_authenticated and request.user.is_admin
+
+
+class IsAdmin(permissions.BasePermission):
+    """Allow ordinary administrator accounts, excluding superadmins."""
+
+    def has_permission(self, request, view):
+        return (
+            request.user
+            and request.user.is_authenticated
+            and request.user.role == 'ADMIN'
+        )
+
+
+class IsSuperAdmin(permissions.BasePermission):
+    """Allow only explicitly designated superadministrator accounts."""
+
+    def has_permission(self, request, view):
+        return (
+            request.user
+            and request.user.is_authenticated
+            and request.user.is_superadmin
+        )
+
+
+class IsStudentOwner(permissions.BasePermission):
+    """Allow a student to access an object linked to their own account."""
+
+    def has_object_permission(self, request, view, obj):
+        return (
+            request.user
+            and request.user.is_authenticated
+            and request.user.is_student
+            and getattr(obj, 'student_id', None) == request.user.pk
+        )
+
+
+class IsAssignedConsultant(permissions.BasePermission):
+    """Allow consultants to access objects assigned to their own account."""
+
+    def has_object_permission(self, request, view, obj):
+        return (
+            request.user
+            and request.user.is_authenticated
+            and request.user.is_consultant
+            and getattr(obj, 'consultant_id', None) == request.user.pk
+        )
+
+
+class IsNotificationOwner(permissions.BasePermission):
+    """Allow an authenticated actor to access only their own notifications."""
+
+    def has_object_permission(self, request, view, obj):
+        return (
+            request.user
+            and request.user.is_authenticated
+            and getattr(obj, 'user_id', None) == request.user.pk
+        )

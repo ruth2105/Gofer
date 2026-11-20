@@ -143,6 +143,10 @@ class User(AbstractBaseUser, PermissionsMixin):
         """Check if user is an admin or superadmin."""
         return self.role in ['ADMIN', 'SUPERADMIN']
 
+    @property
+    def is_superadmin(self):
+        return self.role == 'SUPERADMIN'
+
 
 class EmailVerificationToken(models.Model):
     """A single active, hashed email-verification token per user."""
@@ -165,3 +169,40 @@ class EmailVerificationToken(models.Model):
 
     def __str__(self):
         return f'Email verification for {self.user_id}'
+
+
+class SecurityAuditEvent(models.Model):
+    """Append-only record of security-sensitive account changes."""
+
+    action = models.CharField(max_length=64)
+    actor = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='security_events_performed',
+    )
+    actor_role = models.CharField(max_length=20, blank=True)
+    target = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='security_events_received',
+    )
+    target_role = models.CharField(max_length=20, blank=True)
+    details = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['-created_at', 'action']),
+            models.Index(fields=['target', '-created_at']),
+        ]
+
+    def __str__(self):
+        return f'{self.action} at {self.created_at:%Y-%m-%d %H:%M:%S}'
+
+    def delete(self, *args, **kwargs):
+        raise ValueError('Security audit events cannot be deleted.')

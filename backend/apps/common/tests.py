@@ -1,11 +1,54 @@
 from io import StringIO
+import os
+from unittest.mock import patch
 
 import pycountry
-from django.core.management import call_command
-from django.test import TestCase
+from django.core import mail
+from django.core.management import CommandError, call_command
+from django.test import SimpleTestCase, TestCase, override_settings
 from rest_framework.test import APIClient
 
 from .models import Country
+
+
+class SendTestEmailCommandTests(SimpleTestCase):
+    @override_settings(
+        EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend',
+        DEFAULT_FROM_EMAIL='verified@example.com',
+    )
+    @patch.dict(os.environ, {'GOFER_TEST_EMAIL_AUTHORIZED_OPERATORS': 'release-operator'})
+    def test_sends_exactly_one_plain_text_message_to_recipient(self):
+        output = StringIO()
+
+        call_command(
+            'send_test_email',
+            recipient='controlled@example.com',
+            operator='release-operator',
+            stdout=output,
+        )
+
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].to, ['controlled@example.com'])
+        self.assertEqual(mail.outbox[0].from_email, 'verified@example.com')
+        self.assertEqual(
+            mail.outbox[0].body,
+            'This is a test message to verify email delivery.',
+        )
+        self.assertEqual(mail.outbox[0].content_subtype, 'plain')
+        self.assertIn('One test email was accepted', output.getvalue())
+
+    @override_settings(EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend')
+    @patch.dict(os.environ, {'GOFER_TEST_EMAIL_AUTHORIZED_OPERATORS': 'release-operator'})
+    def test_unauthorized_operator_sends_no_message(self):
+        with self.assertRaisesMessage(CommandError, 'Not authorized'):
+            call_command(
+                'send_test_email',
+                recipient='controlled@example.com',
+                operator='other-operator',
+                stdout=StringIO(),
+            )
+
+        self.assertEqual(len(mail.outbox), 0)
 
 
 class ImportCountriesCommandTests(TestCase):

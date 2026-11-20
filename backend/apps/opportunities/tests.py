@@ -21,6 +21,46 @@ from .models import (
 )
 
 
+def create_verified_opportunity_source(opportunity, verifier=None):
+    verifier = verifier or User.objects.create_user(
+        email=f'verifier-{opportunity.pk}@example.org',
+        password='SecurePassword123!',
+        role='ADMIN',
+    )
+    source_host = f'{opportunity.pk}.example.org'
+    source = OpportunitySource.objects.create(
+        name=f'Official source {opportunity.pk}',
+        organization=opportunity.organization,
+        base_url=f'https://{source_host}/',
+        source_type='OFFICIAL_PROVIDER',
+        collection_method='API',
+        is_active=True,
+    )
+    run = CollectionRun.objects.create(source=source)
+    return OpportunitySourceRecord.objects.create(
+        source=source,
+        collection_run=run,
+        opportunity=opportunity,
+        source_record_key=f'opportunity-{opportunity.pk}',
+        official_source_url=f'https://{source_host}/listing/',
+        official_application_url=opportunity.application_url,
+        source_title=opportunity.title,
+        normalized_title=opportunity.title.lower(),
+        normalized_organization=opportunity.organization.lower(),
+        normalized_deadline=opportunity.application_deadline,
+        eligibility_scope=opportunity.eligibility_scope,
+        eligible_nationalities=opportunity.eligible_nationalities,
+        excluded_nationalities=opportunity.excluded_nationalities,
+        eligibility_notes=opportunity.eligibility_notes,
+        source_payload={'title': opportunity.title},
+        content_hash='a' * 64,
+        identity_fingerprint='b' * 64,
+        verification_status='VERIFIED',
+        verified_at=timezone.now(),
+        verified_by=verifier,
+    )
+
+
 class OpportunitySourceTests(TestCase):
     def setUp(self):
         self.source_data = {
@@ -187,6 +227,24 @@ class OpportunitySourceRecordTests(TestCase):
             'identity_fingerprint': 'b' * 64,
         }
 
+        opportunity = overrides.get('opportunity')
+        if opportunity:
+            data.update({
+                'normalized_deadline': opportunity.application_deadline,
+                'eligibility_scope': opportunity.eligibility_scope,
+                'eligible_nationalities': opportunity.eligible_nationalities,
+                'excluded_nationalities': opportunity.excluded_nationalities,
+                'eligibility_notes': opportunity.eligibility_notes,
+                'official_application_url': opportunity.application_url,
+            })
+
+        scholarship = overrides.get('scholarship')
+        if scholarship:
+            data.update({
+                'normalized_deadline': scholarship.application_deadline,
+                'official_application_url': scholarship.application_url or '',
+            })
+
         data.update(overrides)
         return data
 
@@ -270,6 +328,7 @@ class OpportunitySourceRecordTests(TestCase):
             type='FULL',
             level='GRADUATE',
             amount=1000,
+            application_url='https://example.org/apply/',
             application_deadline=(
                 timezone.now() + timedelta(days=30)
             ).date(),
@@ -296,6 +355,7 @@ class OpportunitySourceRecordTests(TestCase):
             type='FULL',
             level='GRADUATE',
             amount=1000,
+            application_url='https://example.org/apply/',
             application_deadline=(
                 timezone.now() + timedelta(days=30)
             ).date(),
@@ -332,6 +392,7 @@ class OpportunitySourceRecordTests(TestCase):
             type='FULL',
             level='GRADUATE',
             amount=1000,
+            application_url='https://example.org/apply/',
             application_deadline=(
                 timezone.now() + timedelta(days=30)
             ).date(),
@@ -371,6 +432,7 @@ class OpportunitySourceRecordTests(TestCase):
             type='FULL',
             level='GRADUATE',
             amount=1000,
+            application_url='https://example.org/apply/',
             application_deadline=(
                 timezone.now() + timedelta(days=30)
             ).date(),
@@ -440,6 +502,12 @@ class OpportunitySourceRecordTests(TestCase):
             organization='Example Organization',
             category='INTERNSHIP',
         )
+        record.normalized_deadline = record.opportunity.application_deadline
+        record.eligibility_scope = record.opportunity.eligibility_scope
+        record.eligible_nationalities = record.opportunity.eligible_nationalities
+        record.excluded_nationalities = record.opportunity.excluded_nationalities
+        record.eligibility_notes = record.opportunity.eligibility_notes
+        record.official_application_url = record.opportunity.application_url
         record.save()
 
         verifier.delete()
@@ -652,11 +720,18 @@ class OpportunityApiTests(TestCase):
             country='Ethiopia',
             category='FELLOWSHIP',
             level='GRADUATE',
+            eligibility_scope='ETHIOPIA_AND_OTHERS',
+            eligible_nationalities=['ET', 'KE'],
+            excluded_nationalities=['US'],
+            eligibility_notes='Applicants must meet the provider criteria.',
+            documents_required=['Academic transcript', 'Reference letter'],
             application_deadline=(timezone.now() + timedelta(days=30)).date(),
             application_url='https://example.org/apply/',
             official_website='https://example.org/',
-            is_published=True,
         )
+        create_verified_opportunity_source(self.published)
+        self.published.is_published = True
+        self.published.save()
         self.draft = Opportunity.objects.create(
             title='Private Training Opportunity',
             description='A private, unpublished training listing.',
@@ -689,6 +764,195 @@ class OpportunityApiTests(TestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data['count'], 1)
         self.assertEqual(response.data['results'][0]['id'], str(self.published.id))
+
+    def test_detail_includes_nationality_and_document_requirements(self):
+        response = self.client.get(f'{self.url}{self.published.slug}/')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['eligibility_scope'], 'ETHIOPIA_AND_OTHERS')
+        self.assertEqual(response.data['eligible_nationalities'], ['ET', 'KE'])
+        self.assertEqual(response.data['excluded_nationalities'], ['US'])
+        self.assertEqual(response.data['eligibility_notes'], 'Applicants must meet the provider criteria.')
+        self.assertEqual(
+            response.data['documents_required'],
+            ['Academic transcript', 'Reference letter'],
+        )
+        self.assertEqual(
+            response.data['verified_sources'][0]['url'],
+            f'https://{self.published.pk}.example.org/listing',
+        )
+
+    def test_public_nationality_filter_requires_explicit_confirmed_eligibility(self):
+        eligible = Opportunity.objects.create(
+            title='Explicitly eligible job',
+            description='A confirmed job listing.',
+            organization='Example Employer',
+            category='JOB',
+            eligibility_scope='ETHIOPIA_AND_OTHERS',
+            eligible_nationalities=['ET'],
+            compensation_status='PAID',
+            application_url='https://example.org/job/',
+        )
+        create_verified_opportunity_source(eligible)
+        eligible.is_published = True
+        eligible.save()
+
+        unknown = Opportunity.objects.create(
+            title='Unknown eligibility job',
+            description='A job with unknown eligibility.',
+            organization='Other Employer',
+            category='JOB',
+            application_url='https://example.org/unknown-job/',
+        )
+        create_verified_opportunity_source(unknown)
+        unknown.is_published = True
+        unknown.save()
+
+        response = self.client.get(
+            self.url,
+            {'nationality': 'et', 'category': 'JOB'},
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['count'], 1)
+        self.assertEqual(response.data['results'][0]['slug'], eligible.slug)
+
+    def test_invalid_nationality_filter_is_rejected(self):
+        response = self.client.get(self.url, {'nationality': 'ETH'})
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_api_filters_job_compensation_and_education(self):
+        job = Opportunity.objects.create(
+            title='Paid graduate role',
+            description='Graduate work opportunity.',
+            organization='Example Employer',
+            category='JOB',
+            level='GRADUATE',
+            compensation_status='PAID',
+            employment_type='FULL_TIME',
+            work_mode='REMOTE',
+            application_url='https://example.org/role/',
+        )
+        create_verified_opportunity_source(job)
+        job.is_published = True
+        job.save()
+
+        response = self.client.get(
+            self.url,
+            {'category': 'JOB', 'funding': 'PAID', 'education': 'GRADUATE'},
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['count'], 1)
+        self.assertEqual(response.data['results'][0]['slug'], job.slug)
+
+    def test_expired_opportunities_are_hidden_from_public_api(self):
+        expired = Opportunity.objects.create(
+            title='Expired opportunity',
+            description='An expired test opportunity.',
+            organization='Example Organization',
+            category='INTERNSHIP',
+            application_deadline=timezone.localdate() + timedelta(days=1),
+            application_url='https://example.org/expired/',
+        )
+        create_verified_opportunity_source(expired)
+        expired.is_published = True
+        expired.save()
+        expired_deadline = timezone.localdate() - timedelta(days=1)
+        Opportunity.objects.filter(pk=expired.pk).update(
+            application_deadline=expired_deadline,
+            status='EXPIRED',
+        )
+        OpportunitySourceRecord.objects.filter(
+            opportunity=expired,
+        ).update(normalized_deadline=expired_deadline)
+
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertNotIn(
+            expired.slug,
+            [item['slug'] for item in response.data['results']],
+        )
+
+    def test_public_api_paginates_matching_results(self):
+        for index in range(20):
+            opportunity = Opportunity.objects.create(
+                title=f'Paginated opportunity {index}',
+                description='A current verified listing.',
+                organization=f'Example Organization {index}',
+                category='INTERNSHIP',
+                application_url=f'https://example.org/apply/{index}/',
+            )
+            create_verified_opportunity_source(opportunity)
+            opportunity.is_published = True
+            opportunity.save()
+
+        first_page = self.client.get(self.url)
+        second_page = self.client.get(self.url, {'page': 2})
+
+        self.assertEqual(first_page.status_code, status.HTTP_200_OK)
+        self.assertEqual(first_page.data['count'], 21)
+        self.assertEqual(len(first_page.data['results']), 20)
+        self.assertIsNotNone(first_page.data['next'])
+        self.assertEqual(second_page.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(second_page.data['results']), 1)
+
+    def test_public_api_sorts_by_application_deadline(self):
+        earliest = Opportunity.objects.create(
+            title='Earliest deadline internship',
+            description='A current verified listing.',
+            organization='Example Organization Earliest',
+            category='INTERNSHIP',
+            application_deadline=timezone.localdate() + timedelta(days=2),
+            application_url='https://example.org/earliest/',
+        )
+        create_verified_opportunity_source(earliest)
+        earliest.is_published = True
+        earliest.save()
+
+        latest = Opportunity.objects.create(
+            title='Latest deadline internship',
+            description='A current verified listing.',
+            organization='Example Organization Latest',
+            category='INTERNSHIP',
+            application_deadline=timezone.localdate() + timedelta(days=60),
+            application_url='https://example.org/latest/',
+        )
+        create_verified_opportunity_source(latest)
+        latest.is_published = True
+        latest.save()
+
+        ascending = self.client.get(self.url, {'ordering': 'application_deadline'})
+        descending = self.client.get(self.url, {'ordering': '-application_deadline'})
+
+        self.assertEqual(ascending.data['results'][0]['slug'], earliest.slug)
+        self.assertEqual(descending.data['results'][0]['slug'], latest.slug)
+
+    def test_opportunity_cannot_be_both_eligible_and_excluded_by_nationality(self):
+        with self.assertRaises(ValidationError):
+            Opportunity.objects.create(
+                title='Conflicting nationality rules',
+                description='A test listing.',
+                organization='Example Organization',
+                category='FELLOWSHIP',
+                eligible_nationalities=['ET'],
+                excluded_nationalities=['ET'],
+                application_url='https://example.org/apply/',
+            )
+
+    def test_ethiopia_only_opportunity_requires_only_ethiopia_as_eligible(self):
+        with self.assertRaises(ValidationError):
+            Opportunity.objects.create(
+                title='Incomplete Ethiopia-only eligibility',
+                description='A test listing.',
+                organization='Example Organization',
+                category='FELLOWSHIP',
+                eligibility_scope='ETHIOPIA_ONLY',
+                eligible_nationalities=[],
+                application_url='https://example.org/apply/',
+            )
 
     def test_public_api_hides_opportunity_with_unverified_source_record(self):
         source_backed = Opportunity.objects.create(
@@ -784,6 +1048,7 @@ class OpportunityApiTests(TestCase):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         created = Opportunity.objects.get(pk=response.data['id'])
         self.assertFalse(created.is_published)
+        create_verified_opportunity_source(created, admin_user)
 
         publish_response = self.client.patch(
             f'{self.url}{created.slug}/',
@@ -794,6 +1059,68 @@ class OpportunityApiTests(TestCase):
         self.assertEqual(publish_response.status_code, status.HTTP_200_OK)
         created.refresh_from_db()
         self.assertTrue(created.is_published)
+
+        edit_response = self.client.patch(
+            f'{self.url}{created.slug}/',
+            {'short_description': 'Updated by an administrator.'},
+            format='json',
+        )
+        self.assertEqual(edit_response.status_code, status.HTTP_200_OK)
+        created.refresh_from_db()
+        self.assertEqual(
+            created.short_description,
+            'Updated by an administrator.',
+        )
+
+    def test_admin_cannot_publish_opportunity_without_verified_source(self):
+        admin_user = User.objects.create_user(
+            email='publication-reviewer@example.com',
+            password='SecurePassword123!',
+            role='ADMIN',
+        )
+        self.client.force_authenticate(user=admin_user)
+
+        response = self.client.patch(
+            f'{self.url}{self.draft.slug}/',
+            {'is_published': True},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        details = response.data.get('details', response.data)
+        self.assertIn('is_published', details)
+        self.assertIn('verified', str(details['is_published']).lower())
+        self.draft.refresh_from_db()
+        self.assertFalse(self.draft.is_published)
+
+    def test_admin_cannot_create_published_opportunity_without_verified_source(self):
+        admin_user = User.objects.create_user(
+            email='publication-creator@example.com',
+            password='SecurePassword123!',
+            role='ADMIN',
+        )
+        self.client.force_authenticate(user=admin_user)
+
+        response = self.client.post(
+            self.url,
+            {
+                'title': 'Unverified Published Opportunity',
+                'description': 'This must remain unpublished.',
+                'organization': 'Example Organization',
+                'category': 'JOB',
+                'application_url': 'https://example.org/unverified-job/',
+                'is_published': True,
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        details = response.data.get('details', response.data)
+        self.assertIn('is_published', details)
+        self.assertIn('verified', str(details['is_published']).lower())
+        self.assertFalse(Opportunity.objects.filter(
+            title='Unverified Published Opportunity',
+        ).exists())
 
 
 class OpportunitySourceRecordAdminTests(TestCase):

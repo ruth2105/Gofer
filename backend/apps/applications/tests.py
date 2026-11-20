@@ -1,10 +1,16 @@
 from datetime import date
 
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
 
 from apps.accounts.models import User
 from apps.notifications.models import Notification
+from apps.opportunities.models import (
+    CollectionRun,
+    OpportunitySource,
+    OpportunitySourceRecord,
+)
 from apps.scholarships.models import Scholarship
 from apps.universities.models import University
 from .models import Application
@@ -136,8 +142,43 @@ class ApplicationApiTests(APITestCase):
             level='GRADUATE',
             amount='1000.00',
             application_deadline=date(2027, 1, 1),
-            is_published=True,
+            application_url='https://example.org/apply/',
+            is_published=False,
         )
+        reviewer = User.objects.create_user(
+            email='scholarship-reviewer@example.com',
+            password='SecurePassword123!',
+            role='ADMIN',
+        )
+        source = OpportunitySource.objects.create(
+            name='Official scholarship source',
+            organization='Example Foundation',
+            base_url='https://example.org/',
+            source_type='OFFICIAL_PROVIDER',
+            collection_method='API',
+            is_active=True,
+        )
+        run = CollectionRun.objects.create(source=source)
+        OpportunitySourceRecord.objects.create(
+            source=source,
+            collection_run=run,
+            scholarship=scholarship,
+            source_record_key='published-scholarship',
+            official_source_url='https://example.org/scholarships/published/',
+            official_application_url=scholarship.application_url,
+            source_title=scholarship.name,
+            normalized_title=scholarship.name.lower(),
+            normalized_organization=scholarship.provider.lower(),
+            normalized_deadline=scholarship.application_deadline,
+            source_payload={'title': scholarship.name},
+            content_hash='a' * 64,
+            identity_fingerprint='b' * 64,
+            verification_status='VERIFIED',
+            verified_at=timezone.now(),
+            verified_by=reviewer,
+        )
+        scholarship.is_published = True
+        scholarship.save()
 
         response = self.client.post(self.url, {
             'application_type': 'SCHOLARSHIP',

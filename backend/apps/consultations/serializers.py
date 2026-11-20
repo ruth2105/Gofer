@@ -5,6 +5,7 @@ from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.utils import timezone
 from rest_framework import serializers
+from rest_framework.exceptions import PermissionDenied
 
 from apps.services.models import Service
 from apps.consultants.models import ConsultantProfile
@@ -35,6 +36,63 @@ class ConsultantDirectorySerializer(serializers.ModelSerializer):
             'timezone',
         )
         read_only_fields = fields
+
+
+class ConsultantProfileSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ConsultantProfile
+        fields = (
+            'company_name',
+            'job_title',
+            'years_of_experience',
+            'bio',
+            'specializations',
+            'languages',
+            'expertise_countries',
+            'expertise_fields',
+            'consultation_rate',
+            'availability_hours',
+            'timezone',
+            'verification_status',
+            'is_available',
+            'is_featured',
+            'total_consultations',
+            'total_students_helped',
+            'average_rating',
+            'success_rate',
+            'verified_at',
+            'created_at',
+            'updated_at',
+        )
+        read_only_fields = (
+            'verification_status',
+            'is_featured',
+            'total_consultations',
+            'total_students_helped',
+            'average_rating',
+            'success_rate',
+            'verified_at',
+            'created_at',
+            'updated_at',
+        )
+
+    def to_internal_value(self, data):
+        protected_fields = {
+            'verification_status',
+            'verified_at',
+            'is_featured',
+            'total_consultations',
+            'total_students_helped',
+            'average_rating',
+            'success_rate',
+            'verification_documents',
+            'user',
+        }
+        if protected_fields.intersection(data):
+            raise PermissionDenied(
+                'Consultant verification and account ownership fields are managed by administrators.'
+            )
+        return super().to_internal_value(data)
 
 
 class StudentConsultationSerializer(serializers.ModelSerializer):

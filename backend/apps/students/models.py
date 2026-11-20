@@ -9,6 +9,201 @@ from django.db import models
 from django.core.validators import MinValueValidator, MaxValueValidator
 
 
+class Education(models.Model):
+    """
+    Education history for students (multiple records allowed).
+    """
+    DEGREE_LEVEL_CHOICES = [
+        ('HIGH_SCHOOL', 'High School'),
+        ('ASSOCIATE', 'Associate Degree'),
+        ('BACHELOR', 'Bachelor\'s Degree'),
+        ('MASTER', 'Master\'s Degree'),
+        ('DOCTORATE', 'Doctorate/PhD'),
+        ('DIPLOMA', 'Diploma'),
+        ('CERTIFICATE', 'Certificate'),
+    ]
+
+    id = models.UUIDField(
+        primary_key=True,
+        default=uuid.uuid4,
+        editable=False,
+    )
+
+    student_profile = models.ForeignKey(
+        'StudentProfile',
+        on_delete=models.CASCADE,
+        related_name='education_history',
+    )
+
+    institution_name = models.CharField(max_length=200)
+    degree_level = models.CharField(max_length=20, choices=DEGREE_LEVEL_CHOICES)
+    field_of_study = models.CharField(max_length=200)
+    country = models.ForeignKey(
+        'common.Country',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='educations',
+    )
+    
+    start_date = models.DateField()
+    end_date = models.DateField(null=True, blank=True)  # Null if currently enrolled
+    is_current = models.BooleanField(default=False)
+
+    gpa = models.DecimalField(
+        max_digits=4,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(0.0), MaxValueValidator(10.0)],
+    )
+    gpa_scale = models.DecimalField(
+        max_digits=3,
+        decimal_places=1,
+        default=4.0,
+        help_text="GPA scale (e.g., 4.0, 5.0, 10.0)",
+    )
+
+    achievements = models.TextField(blank=True, help_text="Honors, awards, distinctions")
+    description = models.TextField(blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'student_education'
+        verbose_name = 'Education'
+        verbose_name_plural = 'Education History'
+        ordering = ['-start_date']
+        indexes = [
+            models.Index(fields=['student_profile']),
+            models.Index(fields=['degree_level']),
+        ]
+
+    def __str__(self):
+        return f"{self.degree_level} in {self.field_of_study} at {self.institution_name}"
+
+
+class WorkExperience(models.Model):
+    """
+    Work experience for students (multiple records allowed).
+    """
+    EMPLOYMENT_TYPE_CHOICES = [
+        ('FULL_TIME', 'Full-time'),
+        ('PART_TIME', 'Part-time'),
+        ('INTERNSHIP', 'Internship'),
+        ('CONTRACT', 'Contract'),
+        ('FREELANCE', 'Freelance'),
+        ('VOLUNTEER', 'Volunteer'),
+    ]
+
+    id = models.UUIDField(
+        primary_key=True,
+        default=uuid.uuid4,
+        editable=False,
+    )
+
+    student_profile = models.ForeignKey(
+        'StudentProfile',
+        on_delete=models.CASCADE,
+        related_name='work_experience',
+    )
+
+    company_name = models.CharField(max_length=200)
+    position_title = models.CharField(max_length=200)
+    employment_type = models.CharField(max_length=20, choices=EMPLOYMENT_TYPE_CHOICES)
+    
+    location = models.CharField(max_length=200, blank=True)
+    country = models.ForeignKey(
+        'common.Country',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='work_experiences',
+    )
+
+    start_date = models.DateField()
+    end_date = models.DateField(null=True, blank=True)  # Null if currently working
+    is_current = models.BooleanField(default=False)
+
+    description = models.TextField(help_text="Key responsibilities and achievements")
+    skills_used = models.JSONField(default=list, blank=True, help_text="List of skills used")
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'student_work_experience'
+        verbose_name = 'Work Experience'
+        verbose_name_plural = 'Work Experience'
+        ordering = ['-start_date']
+        indexes = [
+            models.Index(fields=['student_profile']),
+            models.Index(fields=['employment_type']),
+        ]
+
+    def __str__(self):
+        return f"{self.position_title} at {self.company_name}"
+
+
+class Skill(models.Model):
+    """
+    Skills for students with proficiency levels.
+    """
+    PROFICIENCY_CHOICES = [
+        ('BEGINNER', 'Beginner'),
+        ('INTERMEDIATE', 'Intermediate'),
+        ('ADVANCED', 'Advanced'),
+        ('EXPERT', 'Expert'),
+    ]
+
+    SKILL_CATEGORY_CHOICES = [
+        ('TECHNICAL', 'Technical'),
+        ('LANGUAGE', 'Language'),
+        ('SOFT_SKILL', 'Soft Skill'),
+        ('ACADEMIC', 'Academic'),
+        ('OTHER', 'Other'),
+    ]
+
+    id = models.UUIDField(
+        primary_key=True,
+        default=uuid.uuid4,
+        editable=False,
+    )
+
+    student_profile = models.ForeignKey(
+        'StudentProfile',
+        on_delete=models.CASCADE,
+        related_name='skills',
+    )
+
+    name = models.CharField(max_length=100)
+    category = models.CharField(max_length=20, choices=SKILL_CATEGORY_CHOICES, default='OTHER')
+    proficiency = models.CharField(max_length=20, choices=PROFICIENCY_CHOICES, default='INTERMEDIATE')
+    years_of_experience = models.IntegerField(
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(0), MaxValueValidator(50)],
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'student_skills'
+        verbose_name = 'Skill'
+        verbose_name_plural = 'Skills'
+        ordering = ['category', 'name']
+        unique_together = ['student_profile', 'name']  # Prevent duplicate skills
+        indexes = [
+            models.Index(fields=['student_profile']),
+            models.Index(fields=['category']),
+        ]
+
+    def __str__(self):
+        return f"{self.name} ({self.proficiency})"
+
+
 class StudentProfile(models.Model):
     """
     Extended profile for students.

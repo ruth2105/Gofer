@@ -10,17 +10,35 @@ from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.common.permissions import IsConsultant, IsStudent
+from apps.common.permissions import (
+    IsAssignedConsultant,
+    IsConsultant,
+    IsStudent,
+    IsStudentOwner,
+)
 from apps.notifications.models import Notification
 from .models import Consultation
 from .serializers import (
     ConsultantConsultationSerializer,
     ConsultantDirectorySerializer,
+    ConsultantProfileSerializer,
     ConsultationCompletionSerializer,
     ConsultationConfirmationSerializer,
     ConsultationFeedbackSerializer,
     StudentConsultationSerializer,
 )
+
+
+class ConsultantProfileView(generics.RetrieveUpdateAPIView):
+    serializer_class = ConsultantProfileSerializer
+    permission_classes = [permissions.IsAuthenticated, IsConsultant]
+    http_method_names = ['get', 'patch', 'head', 'options']
+
+    def get_object(self):
+        from apps.consultants.models import ConsultantProfile
+
+        profile, _ = ConsultantProfile.objects.get_or_create(user=self.request.user)
+        return profile
 
 
 class ConsultantDirectoryView(generics.ListAPIView):
@@ -44,7 +62,11 @@ class ConsultantDirectoryView(generics.ListAPIView):
 
 class StudentConsultationViewSet(viewsets.ModelViewSet):
     serializer_class = StudentConsultationSerializer
-    permission_classes = [permissions.IsAuthenticated, IsStudent]
+    permission_classes = [
+        permissions.IsAuthenticated,
+        IsStudent,
+        IsStudentOwner,
+    ]
     http_method_names = ['get', 'post', 'head', 'options']
 
     def get_queryset(self):
@@ -126,7 +148,11 @@ class ConsultantAssignedConsultationsView(generics.ListAPIView):
 
 
 class ConsultantConsultationActionView(APIView):
-    permission_classes = [permissions.IsAuthenticated, IsConsultant]
+    permission_classes = [
+        permissions.IsAuthenticated,
+        IsConsultant,
+        IsAssignedConsultant,
+    ]
 
     @transaction.atomic
     def post(self, request, consultation_id, action_name):
@@ -134,6 +160,7 @@ class ConsultantConsultationActionView(APIView):
             Consultation.objects.filter(consultant=request.user).select_related('student', 'service'),
             id=consultation_id,
         )
+        self.check_object_permissions(request, consultation)
         now = timezone.now()
         start = _consultation_start(consultation)
         if action_name == 'confirm':

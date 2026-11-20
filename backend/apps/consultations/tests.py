@@ -84,6 +84,31 @@ class ConsultationApiTests(APITestCase):
         self.assertEqual(response.data[0]['consultant_id'], str(self.consultant.id))
         self.assertNotIn('verification_documents', response.data[0])
 
+    def test_consultant_can_read_and_update_only_own_profile_fields(self):
+        self.client.force_authenticate(user=self.consultant)
+        response = self.client.get('/api/v1/consultations/me/')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        updated = self.client.patch(
+            '/api/v1/consultations/me/',
+            {'bio': 'Education and application guidance.'},
+            format='json',
+        )
+        self.assertEqual(updated.status_code, status.HTTP_200_OK)
+        self.assertEqual(updated.data['bio'], 'Education and application guidance.')
+
+        escalation = self.client.patch(
+            '/api/v1/consultations/me/',
+            {'verification_status': 'VERIFIED'},
+            format='json',
+        )
+        self.assertEqual(escalation.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_student_cannot_access_consultant_profile_endpoint(self):
+        self.client.force_authenticate(user=self.student)
+        response = self.client.get('/api/v1/consultations/me/')
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
     def test_student_can_request_a_future_consultation_with_a_verified_consultant(self):
         response = self.client.post(self.base_url, self.booking_payload(), format='json')
 

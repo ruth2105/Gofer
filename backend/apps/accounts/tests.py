@@ -1,5 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
-from datetime import timedelta
+from datetime import datetime, timedelta
 from threading import Barrier
 
 from unittest import skipUnless
@@ -7,18 +7,19 @@ from unittest.mock import Mock, patch
 
 from django.db import IntegrityError
 from django.db import close_old_connections, connection
+from django.contrib.auth.tokens import default_token_generator
 from django.core import mail
 from django.core.cache import cache
-from django.test import TransactionTestCase
+from django.test import TransactionTestCase, override_settings
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase, APIClient
 from rest_framework import serializers
-from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
 from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken
 
 from .email_verification import _token_digest
-from .models import EmailVerificationToken, User
+from .models import EmailVerificationToken, SecurityAuditEvent, User
 from .serializers import UserRegistrationSerializer
 
 
@@ -137,6 +138,36 @@ class AuthenticationApiTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertTrue(User.objects.filter(email='student@example.com').exists())
+
+    def test_public_registration_rejects_privileged_role_requests(self):
+        response = self.client.post(
+            '/api/v1/auth/register/',
+            {
+                **self.registration_data(),
+                'role': 'SUPERADMIN',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(User.objects.filter(email='student@example.com').exists())
+
+    def test_self_profile_cannot_change_role_or_verification(self):
+        user = User.objects.create_user(
+            email='profile-role@example.com',
+            password='Strong-Test-Password-123!',
+        )
+        self.client.force_authenticate(user=user)
+        response = self.client.patch(
+            '/api/v1/auth/me/',
+            {'role': 'ADMIN', 'is_verified': True},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        user.refresh_from_db()
+        self.assertEqual(user.role, 'STUDENT')
+        self.assertFalse(user.is_verified)
 
     def test_mixed_case_login_uses_canonical_email(self):
         User.objects.create_user(
@@ -604,3 +635,313 @@ class EmailVerificationWorkflowTests(APITestCase):
                 status.HTTP_429_TOO_MANY_REQUESTS,
             ],
         )
+
+
+class RoleManagementApiTests(APITestCase):
+    def setUp(self):
+        cache.clear()
+        self.student = User.objects.create_user(
+            email='managed.student@example.com',
+            password='Strong-Test-Password-123!',
+        )
+        self.consultant = User.objects.create_user(
+            email='managed.consultant@example.com',
+            password='Strong-Test-Password-123!',
+            role='CONSULTANT',
+        )
+        self.admin = User.objects.create_user(
+            email='manager@example.com',
+            password='Strong-Test-Password-123!',
+            role='ADMIN',
+            is_staff=True,
+        )
+        self.superadmin = User.objects.create_superuser(
+            email='root@example.com',
+            password='Strong-Test-Password-123!',
+        )
+
+    def test_guest_and_student_cannot_access_user_management(self):
+        anonymous = self.client.get('/api/v1/auth/users/')
+        self.assertEqual(anonymous.status_code, status.HTTP_401_UNAUTHORIZED)
+
+        self.client.force_authenticate(user=self.student)
+        student_response = self.client.get('/api/v1/auth/users/')
+        self.assertEqual(student_response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_admin_lists_only_ordinary_accounts(self):
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.get('/api/v1/auth/users/')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        listed_ids = {row['id'] for row in response.data['results']}
+        self.assertEqual(
+            listed_ids,
+            {str(self.student.pk), str(self.consultant.pk)},
+        )
+
+    def test_admin_cannot_escalate_role_or_manage_an_admin_account(self):
+        self.client.force_authenticate(user=self.admin)
+        role_escalation = self.client.patch(
+            f'/api/v1/auth/users/{self.student.pk}/',
+            {'role': 'ADMIN'},
+            format='json',
+        )
+        self.assertEqual(role_escalation.status_code, status.HTTP_403_FORBIDDEN)
+        self.student.refresh_from_db()
+        self.assertEqual(self.student.role, 'STUDENT')
+
+        system_flag = self.client.patch(
+            f'/api/v1/auth/users/{self.student.pk}/',
+            {'is_superuser': True},
+            format='json',
+        )
+        self.assertEqual(system_flag.status_code, status.HTTP_403_FORBIDDEN)
+
+        admin_target = self.client.get(f'/api/v1/auth/users/{self.superadmin.pk}/')
+        self.assertEqual(admin_target.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_admin_can_manage_ordinary_account_without_changing_role(self):
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.patch(
+            f'/api/v1/auth/users/{self.student.pk}/',
+            {'is_active': False, 'first_name': 'Disabled'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.student.refresh_from_db()
+        self.assertFalse(self.student.is_active)
+        self.assertEqual(self.student.first_name, 'Disabled')
+        self.assertEqual(self.student.role, 'STUDENT')
+        self.assertTrue(
+            SecurityAuditEvent.objects.filter(
+                action='USER_DEACTIVATED',
+                actor=self.admin,
+                target=self.student,
+            ).exists()
+        )
+
+    def test_superadmin_can_assign_roles_and_manage_admin_accounts(self):
+        self.client.force_authenticate(user=self.superadmin)
+        response = self.client.patch(
+            f'/api/v1/auth/users/{self.student.pk}/',
+            {'role': 'ADMIN'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.student.refresh_from_db()
+        self.assertEqual(self.student.role, 'ADMIN')
+        self.assertTrue(self.student.is_staff)
+        self.assertFalse(self.student.is_superuser)
+        self.assertTrue(
+            SecurityAuditEvent.objects.filter(
+                action='USER_ROLE_CHANGED',
+                actor=self.superadmin,
+                target=self.student,
+            ).exists()
+        )
+
+    def test_superadmin_cannot_lock_out_own_account(self):
+        self.client.force_authenticate(user=self.superadmin)
+        response = self.client.patch(
+            f'/api/v1/auth/users/{self.superadmin.pk}/',
+            {'is_active': False},
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_security_audit_is_superadmin_only_and_read_only(self):
+        record_security_event_for_test = SecurityAuditEvent.objects.create(
+            action='TEST_EVENT',
+            actor=self.admin,
+            actor_role=self.admin.role,
+            target=self.student,
+            target_role=self.student.role,
+        )
+        self.client.force_authenticate(user=self.admin)
+        denied = self.client.get('/api/v1/auth/security/audit/')
+        self.assertEqual(denied.status_code, status.HTTP_403_FORBIDDEN)
+
+        self.client.force_authenticate(user=self.superadmin)
+        allowed = self.client.get('/api/v1/auth/security/audit/')
+        self.assertEqual(allowed.status_code, status.HTTP_200_OK)
+        self.assertEqual(allowed.data['results'][0]['id'], record_security_event_for_test.pk)
+        self.assertNotIn('email', allowed.data['results'][0])
+
+
+class PasswordLifecycleApiTests(APITestCase):
+    def setUp(self):
+        cache.clear()
+        self.user = User.objects.create_user(
+            email='reset.student@example.com',
+            password='Strong-Test-Password-123!',
+            is_verified=True,
+        )
+
+    def request_reset(self, email=None):
+        return self.client.post(
+            '/api/v1/auth/password/reset/',
+            {'email': email or self.user.email},
+            format='json',
+        )
+
+    def reset_link_data(self):
+        import re
+
+        match = re.search(
+            r'[?&]uid=([A-Za-z0-9_-]+)&token=([A-Za-z0-9_-]+)',
+            mail.outbox[-1].body,
+        )
+        if not match:
+            raise AssertionError('Password reset token was not found in the email body.')
+        return {'uid': match.group(1), 'token': match.group(2)}
+
+    def confirm_reset(self, link, password='Another-Strong-Password-456!'):
+        return self.client.post(
+            '/api/v1/auth/password/reset/confirm/',
+            {
+                **link,
+                'new_password': password,
+                'new_password2': password,
+            },
+            format='json',
+        )
+
+    def test_reset_request_does_not_disclose_account_existence(self):
+        registered = self.request_reset()
+        unknown = self.request_reset('unknown@example.com')
+
+        self.assertEqual(registered.status_code, status.HTTP_202_ACCEPTED)
+        self.assertEqual(unknown.status_code, status.HTTP_202_ACCEPTED)
+        self.assertEqual(registered.data, unknown.data)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn('does not confirm', registered.data['message'])
+
+    def test_reset_token_is_single_use_and_password_change_revokes_sessions(self):
+        refresh = RefreshToken.for_user(self.user)
+        response = self.request_reset()
+        self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED)
+        link = self.reset_link_data()
+
+        reset = self.confirm_reset(link)
+        self.assertEqual(reset.status_code, status.HTTP_200_OK)
+        self.assertTrue(reset.cookies['access_token']['max-age'] == 0)
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password('Another-Strong-Password-456!'))
+        self.assertTrue(
+            BlacklistedToken.objects.filter(token__jti=refresh['jti']).exists()
+        )
+
+        replay = self.confirm_reset(link)
+        self.assertEqual(replay.status_code, status.HTTP_400_BAD_REQUEST)
+        old_login = self.client.post(
+            '/api/v1/auth/login/',
+            {'email': self.user.email, 'password': 'Strong-Test-Password-123!'},
+            format='json',
+        )
+        self.assertEqual(old_login.status_code, status.HTTP_400_BAD_REQUEST)
+
+    @override_settings(PASSWORD_RESET_TIMEOUT=60)
+    def test_expired_password_reset_token_is_rejected(self):
+        self.request_reset()
+        link = self.reset_link_data()
+        with patch.object(
+            default_token_generator,
+            '_now',
+            return_value=datetime.now() + timedelta(seconds=61),
+        ):
+            response = self.confirm_reset(link)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            response.data['error'],
+            'This password reset link is invalid or expired.',
+        )
+
+    def test_invalid_password_reset_token_is_rejected(self):
+        response = self.confirm_reset({'uid': 'invalid', 'token': 'invalid'})
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_reset_email_provider_failure_is_generic_and_logged_safely(self):
+        with patch(
+            'apps.accounts.password_reset.EmailMultiAlternatives.send',
+            side_effect=OSError('private provider response'),
+        ):
+            registered = self.request_reset()
+        unknown = self.request_reset('unknown@example.com')
+
+        self.assertEqual(registered.status_code, status.HTTP_202_ACCEPTED)
+        self.assertEqual(registered.data, unknown.data)
+        self.assertNotIn('private provider response', str(registered.data))
+        self.assertTrue(
+            SecurityAuditEvent.objects.filter(
+                action='PASSWORD_RESET_EMAIL_FAILED',
+                target=self.user,
+            ).exists()
+        )
+
+    def test_password_change_requires_current_password_and_revokes_old_tokens(self):
+        refresh = RefreshToken.for_user(self.user)
+        access = refresh.access_token
+        self.client.cookies['access_token'] = str(access)
+        self.client.force_authenticate(user=self.user)
+        response = self.client.post(
+            '/api/v1/auth/password/change/',
+            {
+                'old_password': 'Strong-Test-Password-123!',
+                'new_password': 'Changed-Strong-Password-789!',
+                'new_password2': 'Changed-Strong-Password-789!',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password('Changed-Strong-Password-789!'))
+        self.assertTrue(
+            BlacklistedToken.objects.filter(token__jti=refresh['jti']).exists()
+        )
+        self.assertEqual(response.cookies['access_token']['max-age'], 0)
+
+        self.client.force_authenticate(user=None)
+        self.client.cookies['access_token'] = str(access)
+        old_session = self.client.get('/api/v1/auth/me/')
+        self.assertEqual(old_session.status_code, status.HTTP_401_UNAUTHORIZED)
+
+
+class InactiveAndExpiredSessionApiTests(APITestCase):
+    def test_inactive_account_cannot_use_access_or_refresh_tokens(self):
+        user = User.objects.create_user(
+            email='inactive.token@example.com',
+            password='Strong-Test-Password-123!',
+            is_verified=True,
+        )
+        refresh = RefreshToken.for_user(user)
+        user.is_active = False
+        user.save(update_fields=['is_active', 'updated_at'])
+
+        self.client.cookies['access_token'] = str(refresh.access_token)
+        access_response = self.client.get('/api/v1/auth/me/')
+        self.assertEqual(access_response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+        self.client.cookies['refresh_token'] = str(refresh)
+        refresh_response = self.client.post('/api/v1/auth/token/refresh/', {}, format='json')
+        self.assertEqual(refresh_response.status_code, status.HTTP_401_UNAUTHORIZED)
+        self.assertEqual(refresh_response.cookies['refresh_token']['max-age'], 0)
+
+    def test_expired_or_invalid_access_tokens_are_rejected(self):
+        user = User.objects.create_user(
+            email='expired.token@example.com',
+            password='Strong-Test-Password-123!',
+            is_verified=True,
+        )
+        expired = AccessToken.for_user(user)
+        expired.set_exp(lifetime=timedelta(seconds=-1))
+        self.client.cookies['access_token'] = str(expired)
+        expired_response = self.client.get('/api/v1/auth/me/')
+        self.assertEqual(expired_response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+        self.client.cookies['access_token'] = 'not-a-token'
+        invalid_response = self.client.get('/api/v1/auth/me/')
+        self.assertEqual(invalid_response.status_code, status.HTTP_401_UNAUTHORIZED)

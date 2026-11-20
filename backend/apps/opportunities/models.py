@@ -15,7 +15,7 @@ import uuid
 from urllib.parse import urlsplit, urlunsplit
 
 from django.core.exceptions import ValidationError
-from django.core.validators import MinValueValidator, URLValidator
+from django.core.validators import MaxValueValidator, MinValueValidator, URLValidator
 from django.db import models, transaction
 from django.utils import timezone
 from django.utils.text import slugify
@@ -361,9 +361,10 @@ class CollectionRun(models.Model):
 
 
 class Opportunity(models.Model):
-    """Public-facing non-scholarship opportunities."""
+    """Public-facing jobs, internships, and other non-scholarship opportunities."""
 
     CATEGORY_CHOICES = [
+        ('JOB', 'Job'),
         ('INTERNSHIP', 'Internship'),
         ('FELLOWSHIP', 'Fellowship'),
         ('EXCHANGE', 'Exchange Program'),
@@ -387,6 +388,44 @@ class Opportunity(models.Model):
         ('UPCOMING', 'Upcoming'),
         ('OPEN', 'Open'),
         ('CLOSED', 'Closed'),
+        ('EXPIRED', 'Expired'),
+    ]
+
+    EMPLOYMENT_TYPE_CHOICES = [
+        ('UNKNOWN', 'Not confirmed'),
+        ('FULL_TIME', 'Full time'),
+        ('PART_TIME', 'Part time'),
+        ('CONTRACT', 'Contract'),
+        ('TEMPORARY', 'Temporary'),
+        ('OTHER', 'Other'),
+    ]
+
+    WORK_MODE_CHOICES = [
+        ('UNKNOWN', 'Not confirmed'),
+        ('ON_SITE', 'On-site'),
+        ('HYBRID', 'Hybrid'),
+        ('REMOTE', 'Remote'),
+    ]
+
+    COMPENSATION_STATUS_CHOICES = [
+        ('UNKNOWN', 'Not confirmed'),
+        ('PAID', 'Paid'),
+        ('UNPAID', 'Unpaid'),
+    ]
+
+    COMPENSATION_PERIOD_CHOICES = [
+        ('HOURLY', 'Hourly'),
+        ('MONTHLY', 'Monthly'),
+        ('ANNUAL', 'Annual'),
+        ('PROJECT', 'Per project'),
+        ('OTHER', 'Other'),
+    ]
+
+    ELIGIBILITY_SCOPE_CHOICES = [
+        ('UNSPECIFIED', 'Unspecified'),
+        ('ETHIOPIA_ONLY', 'Ethiopia only'),
+        ('ETHIOPIA_AND_OTHERS', 'Ethiopia and others'),
+        ('OTHER_NATIONALITIES', 'Other nationalities'),
     ]
 
     id = models.UUIDField(
@@ -411,6 +450,7 @@ class Opportunity(models.Model):
 
     organization = models.CharField(max_length=300)
     country = models.CharField(max_length=150, blank=True)
+    location = models.CharField(max_length=250, blank=True)
 
     category = models.CharField(
         max_length=30,
@@ -424,7 +464,61 @@ class Opportunity(models.Model):
     )
 
     eligibility = models.JSONField(default=list, blank=True)
+    eligibility_scope = models.CharField(
+        max_length=30,
+        choices=ELIGIBILITY_SCOPE_CHOICES,
+        default='UNSPECIFIED',
+    )
+    eligible_nationalities = models.JSONField(
+        default=list,
+        blank=True,
+        validators=[validate_nationality_codes],
+    )
+    excluded_nationalities = models.JSONField(
+        default=list,
+        blank=True,
+        validators=[validate_nationality_codes],
+    )
+    eligibility_notes = models.TextField(blank=True)
     benefits = models.JSONField(default=list, blank=True)
+    documents_required = models.JSONField(default=list, blank=True)
+    required_skills = models.JSONField(default=list, blank=True)
+
+    employment_type = models.CharField(
+        max_length=20,
+        choices=EMPLOYMENT_TYPE_CHOICES,
+        default='UNKNOWN',
+    )
+    work_mode = models.CharField(
+        max_length=20,
+        choices=WORK_MODE_CHOICES,
+        default='UNKNOWN',
+    )
+    compensation_status = models.CharField(
+        max_length=20,
+        choices=COMPENSATION_STATUS_CHOICES,
+        default='UNKNOWN',
+    )
+    compensation_amount = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(0)],
+    )
+    compensation_currency = models.CharField(max_length=3, blank=True)
+    compensation_period = models.CharField(
+        max_length=20,
+        choices=COMPENSATION_PERIOD_CHOICES,
+        blank=True,
+    )
+    duration = models.CharField(max_length=100, blank=True)
+    experience_requirement = models.TextField(blank=True)
+    minimum_experience_years = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        validators=[MaxValueValidator(80)],
+    )
 
     application_deadline = models.DateField(
         null=True,
@@ -463,7 +557,11 @@ class Opportunity(models.Model):
         ]
 
     def clean(self):
+        self.application_url = normalize_url(self.application_url)
+        self.official_website = normalize_url(self.official_website)
         super().clean()
+
+        self.compensation_currency = self.compensation_currency.strip().upper()
 
         duplicates = Opportunity.objects.filter(
             title__iexact=self.title.strip(),
@@ -472,6 +570,45 @@ class Opportunity(models.Model):
         if self.title and self.organization and duplicates.exists():
             raise ValidationError({
                 'title': 'An opportunity with this title and organization already exists.'
+            })
+
+        overlapping_nationalities = set(
+            self.eligible_nationalities or []
+        ).intersection(
+            self.excluded_nationalities or []
+        )
+        if overlapping_nationalities:
+            raise ValidationError({
+                'excluded_nationalities': (
+                    'A nationality cannot be both eligible and excluded.'
+                )
+            })
+
+        if self.compensation_amount is not None:
+            if not self.compensation_currency or not self.compensation_period:
+                raise ValidationError({
+                    'compensation_currency': (
+                        'Currency and pay period are required when an amount is specified.'
+                    )
+                })
+            if len(self.compensation_currency) != 3 or not self.compensation_currency.isalpha():
+                raise ValidationError({
+                    'compensation_currency': 'Use a three-letter currency code.'
+                })
+
+        if self.compensation_status == 'UNPAID' and self.compensation_amount is not None:
+            raise ValidationError({
+                'compensation_amount': 'Unpaid opportunities cannot have a compensation amount.'
+            })
+
+        if (
+            self.eligibility_scope == 'ETHIOPIA_ONLY'
+            and set(self.eligible_nationalities or []) != {'ET'}
+        ):
+            raise ValidationError({
+                'eligible_nationalities': (
+                    'Ethiopia-only eligibility must contain only ET.'
+                )
             })
 
         if self.is_published:
@@ -483,16 +620,48 @@ class Opportunity(models.Model):
                     )
                 })
 
-            if self.pk and self.source_records.exclude(
+            if self.status not in ('OPEN', 'UPCOMING'):
+                raise ValidationError({
+                    'status': 'Only open or upcoming opportunities can be published.'
+                })
+
+            if self.application_deadline and self.application_deadline < timezone.localdate():
+                raise ValidationError({
+                    'application_deadline': 'Expired opportunities cannot be published.'
+                })
+
+            valid_source_records = self.source_records.filter(
                 verification_status='VERIFIED',
                 source_status='AVAILABLE',
                 verified_at__isnull=False,
-                verified_by__isnull=False,
+                verified_by__role__in=('ADMIN', 'SUPERADMIN'),
+                source__is_active=True,
+                normalized_deadline=self.application_deadline,
+                eligibility_scope=self.eligibility_scope,
+                eligible_nationalities=self.eligible_nationalities,
+                excluded_nationalities=self.excluded_nationalities,
+            ).filter(
+                models.Q(normalized_deadline__isnull=True)
+                | models.Q(normalized_deadline__gte=timezone.localdate())
+            ).filter(
+                models.Q(official_application_url=self.application_url)
+                | models.Q(official_source_url=self.application_url)
+                | models.Q(official_source_url=self.official_website)
+            )
+            if not valid_source_records.exists():
+                raise ValidationError({
+                    'is_published': (
+                        'An opportunity needs at least one currently verified, '
+                        'available official source before publication.'
+                    )
+                })
+
+            if self.source_records.exclude(
+                pk__in=valid_source_records.values('pk')
             ).exists():
                 raise ValidationError({
                     'is_published': (
-                        'An opportunity linked to collected records can only be '
-                        'published when every linked record is verified and available.'
+                        'Every linked source record must remain verified and available.'
                     )
                 })
 
@@ -756,6 +925,11 @@ class OpportunitySourceRecord(models.Model):
                     'source_status': 'Only available source records can be verified.'
                 })
 
+            if self.normalized_deadline and self.normalized_deadline < timezone.localdate():
+                raise ValidationError({
+                    'normalized_deadline': 'Expired source records cannot be verified.'
+                })
+
             if not self.source.is_active:
                 raise ValidationError({
                     'source': 'Only active approved sources can be verified.'
@@ -765,6 +939,46 @@ class OpportunitySourceRecord(models.Model):
                 raise ValidationError({
                     'verified_by': 'Only an administrator can verify source records.'
                 })
+
+            if self.opportunity_id:
+                opportunity = self.opportunity
+                if (
+                    self.normalized_deadline != opportunity.application_deadline
+                    or self.eligibility_scope != opportunity.eligibility_scope
+                    or self.eligible_nationalities != opportunity.eligible_nationalities
+                    or self.excluded_nationalities != opportunity.excluded_nationalities
+                    or (
+                        opportunity.application_url
+                        and self.official_application_url != opportunity.application_url
+                    )
+                ):
+                    raise ValidationError({
+                        'opportunity': (
+                            'Verified source facts must match the published opportunity. '
+                            'Update the source record and reverify after changing listing facts.'
+                        )
+                    })
+
+            if self.scholarship_id:
+                scholarship = self.scholarship
+                if (
+                    self.normalized_deadline != scholarship.application_deadline
+                    or (
+                        scholarship.application_url
+                        and self.official_application_url != scholarship.application_url
+                    )
+                    or (
+                        not scholarship.application_url
+                        and scholarship.website_url
+                        and self.official_source_url != scholarship.website_url
+                    )
+                ):
+                    raise ValidationError({
+                        'scholarship': (
+                            'Verified source facts must match the scholarship deadline '
+                            'and official link.'
+                        )
+                    })
 
         if (
             self.opportunity_id
@@ -876,6 +1090,10 @@ class OpportunitySourceRecord(models.Model):
                 and self.verified_by_id is not None
                 and self.source.is_active
                 and self.verified_by.is_admin
+                and (
+                    self.normalized_deadline is None
+                    or self.normalized_deadline >= timezone.localdate()
+                )
             )
             if not is_verified_record and scholarship_ids:
                 from apps.scholarships.models import Scholarship
@@ -892,6 +1110,28 @@ class OpportunitySourceRecord(models.Model):
                 )
                 if linked_scholarship:
                     linked_scholarship.is_published = False
+
+            opportunity_ids = set()
+            if self.opportunity_id:
+                opportunity_ids.add(self.opportunity_id)
+            if self.pk:
+                previous = OpportunitySourceRecord.objects.filter(
+                    pk=self.pk,
+                ).values_list('opportunity_id', flat=True).first()
+                if previous:
+                    opportunity_ids.add(previous)
+
+            if not is_verified_record and opportunity_ids:
+                Opportunity.objects.filter(
+                    pk__in=opportunity_ids,
+                    is_published=True,
+                ).update(
+                    is_published=False,
+                    updated_at=timezone.now(),
+                )
+                linked_opportunity = self._state.fields_cache.get('opportunity')
+                if linked_opportunity:
+                    linked_opportunity.is_published = False
 
             self.full_clean()
             return super().save(*args, **kwargs)

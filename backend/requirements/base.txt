@@ -1,6 +1,6 @@
 # Core Django
 Django==5.0
-djangorestframework==3.14.0
+djangorestframework==3.15.2
 djangorestframework-simplejwt==5.3.1
 
 # Database
@@ -20,6 +20,12 @@ django-filter==23.5
 
 # File uploads
 Pillow==10.1.0
+
+# Cloud Storage (optional backends)
+django-storages[s3,google,azure]==1.14.4
+boto3==1.34.162  # AWS S3 backend
+google-cloud-storage==2.18.2  # Google Cloud Storage backend
+azure-storage-blob==12.23.1  # Azure Blob Storage backend
 
 # Utilities
 python-slugify==8.0.1

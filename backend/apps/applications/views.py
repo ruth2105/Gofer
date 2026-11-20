@@ -10,7 +10,13 @@ from django.shortcuts import get_object_or_404
 from django.db import transaction
 
 from apps.accounts.models import User
-from apps.common.permissions import IsAdminUser, IsConsultant, IsStudent
+from apps.common.permissions import (
+    IsAdminUser,
+    IsAssignedConsultant,
+    IsConsultant,
+    IsStudent,
+    IsStudentOwner,
+)
 from apps.consultations.models import Consultation
 from apps.destinations.models import Destination
 from apps.notifications.models import Notification
@@ -84,7 +90,11 @@ class ConsultantAssignedApplicationsView(ListAPIView):
 
 
 class ConsultantStartApplicationReviewView(APIView):
-    permission_classes = [permissions.IsAuthenticated, IsConsultant]
+    permission_classes = [
+        permissions.IsAuthenticated,
+        IsConsultant,
+        IsAssignedConsultant,
+    ]
 
     def post(self, request, application_id):
         note = request.data.get('note', '')
@@ -98,6 +108,7 @@ class ConsultantStartApplicationReviewView(APIView):
                 id=application_id,
                 consultant=request.user,
             )
+            self.check_object_permissions(request, application)
             if application.status != 'SUBMITTED':
                 raise ValidationError({
                     'status': 'Only submitted applications can be moved into review.'
@@ -128,7 +139,11 @@ class ApplicationViewSet(
     viewsets.GenericViewSet,
 ):
     serializer_class = ApplicationSerializer
-    permission_classes = [permissions.IsAuthenticated, IsStudent]
+    permission_classes = [
+        permissions.IsAuthenticated,
+        IsStudent,
+        IsStudentOwner,
+    ]
     http_method_names = ['get', 'post', 'put', 'patch', 'head', 'options']
 
     def get_queryset(self):

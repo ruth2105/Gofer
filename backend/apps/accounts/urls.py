@@ -12,6 +12,12 @@ from .views import (
     csrf_token,
     EmailVerificationView,
     ResendVerificationEmailView,
+    PasswordResetRequestView,
+    PasswordResetConfirmView,
+    PasswordChangeView,
+    ManagedUserListView,
+    ManagedUserDetailView,
+    SecurityAuditEventListView,
 )
 
 app_name = 'accounts'
@@ -25,6 +31,12 @@ urlpatterns = [
     path('login/', UserLoginView.as_view(), name='login'),
     path('logout/', UserLogoutView.as_view(), name='logout'),
     path('token/refresh/', CookieTokenRefreshView.as_view(), name='token_refresh'),
+    path('password/reset/', PasswordResetRequestView.as_view(), name='password_reset_request'),
+    path('password/reset/confirm/', PasswordResetConfirmView.as_view(), name='password_reset_confirm'),
+    path('password/change/', PasswordChangeView.as_view(), name='password_change'),
+    path('users/', ManagedUserListView.as_view(), name='managed_users'),
+    path('users/<uuid:user_id>/', ManagedUserDetailView.as_view(), name='managed_user_detail'),
+    path('security/audit/', SecurityAuditEventListView.as_view(), name='security_audit'),
     
     # User Profile
     path('me/', CurrentUserView.as_view(), name='current_user'),

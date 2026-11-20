@@ -4,6 +4,7 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 
+from apps.common.permissions import IsNotificationOwner
 from .models import Notification
 from .serializers import NotificationSerializer
 
@@ -14,7 +15,10 @@ class NotificationViewSet(
     viewsets.GenericViewSet,
 ):
     serializer_class = NotificationSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [
+        permissions.IsAuthenticated,
+        IsNotificationOwner,
+    ]
     http_method_names = ['get', 'post', 'head', 'options']
 
     def get_queryset(self):
