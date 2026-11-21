@@ -47,56 +47,36 @@ services:
       # ⚠️ PRODUCTION DEPLOYMENT CHECKLIST - UPDATE THESE VALUES BEFORE DEPLOYING ⚠️
       
       # EMAIL CONFIGURATION
-      # CRITICAL: Change EMAIL_BACKEND to a real email provider before production deploy
-      # Options:
-      #   - config.email_backends.brevo.BrevoEmailBackend (recommended, 300 free emails/day)
-      #   - django.core.mail.backends.smtp.EmailBackend (requires EMAIL_HOST, EMAIL_PORT, etc.)
-      # DO NOT deploy with console backend - users cannot verify accounts or reset passwords!
+      # Using Brevo for transactional emails (recommended - 300 free emails/day)
+      # REQUIRED: Add BREVO_API_KEY via Render Dashboard before deployment
+      # Get API key from: https://app.brevo.com/settings/keys/api
       - key: EMAIL_BACKEND
-        value: django.core.mail.backends.console.EmailBackend  # ⚠️ MUST CHANGE FOR PRODUCTION
+        value: config.email_backends.brevo.BrevoEmailBackend
       - key: GOFER_EMAIL_FROM
-        value: noreply@goferexam.com  # ⚠️ MUST use verified sender address
-      
-      # BREVO EMAIL PROVIDER (if using Brevo, recommended)
-      # Get API key from https://app.brevo.com/settings/keys/api
+        value: noreply@goferexam.com
+      # REQUIRED: Add this secret via Render Dashboard -> Environment tab
       # - key: BREVO_API_KEY
-      #   sync: false  # Mark as secret
-      
-      # SMTP EMAIL PROVIDER (if using SMTP instead of Brevo)
-      # - key: EMAIL_HOST
-      #   value: smtp.your-provider.com
-      # - key: EMAIL_PORT
-      #   value: 587
-      # - key: EMAIL_HOST_USER
-      #   value: your-username
-      # - key: EMAIL_HOST_PASSWORD
-      #   sync: false  # Mark as secret
-      # - key: EMAIL_USE_TLS
-      #   value: True
-      # - key: EMAIL_USE_SSL
-      #   value: False
+      #   sync: false
+
       
       # FILE STORAGE CONFIGURATION
-      # CRITICAL: Change STORAGE_BACKEND to cloud storage before production deploy
-      # Options:
-      #   - R2: Cloudflare R2 (recommended, 10GB free, S3-compatible)
-      #   - S3: Amazon S3 (costs apply)
-      #   - GCS: Google Cloud Storage (costs apply)
-      #   - AZURE: Azure Blob Storage (costs apply)
-      # DO NOT use LOCAL - files will be DELETED on every deployment/restart!
+      # Currently using LOCAL storage (files stored on ephemeral disk)
+      # WARNING: Files will be deleted on deployment/restart
+      # RECOMMENDED: Configure R2 storage via Render Dashboard for production
       - key: STORAGE_BACKEND
-        value: LOCAL  # ⚠️ MUST CHANGE FOR PRODUCTION - DATA LOSS RISK!
+        value: LOCAL
       
-      # CLOUDFLARE R2 STORAGE (recommended - uncomment and configure before deploying)
-      # Get credentials from Cloudflare R2 dashboard
+      # TO ENABLE R2 STORAGE: Add these via Render Dashboard -> Environment tab
+      # Get credentials from: Cloudflare R2 dashboard
+      # Then change STORAGE_BACKEND to: R2
       # - key: AWS_ACCESS_KEY_ID
-      #   sync: false  # Mark as secret
+      #   sync: false
       # - key: AWS_SECRET_ACCESS_KEY
-      #   sync: false  # Mark as secret
+      #   sync: false
       # - key: AWS_STORAGE_BUCKET_NAME
-      #   value: your-r2-bucket-name
+      #   value: gofer-documents
       # - key: AWS_S3_ENDPOINT_URL
-      #   value: https://your-account-id.r2.cloudflarestorage.com
+      #   value: https://YOUR_ACCOUNT_ID.r2.cloudflarestorage.com
       # - key: AWS_S3_REGION_NAME
       #   value: auto
       
