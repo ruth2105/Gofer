@@ -7,6 +7,7 @@ from django_filters.rest_framework import DjangoFilterBackend
 from drf_spectacular.utils import extend_schema
 from rest_framework import filters, permissions, viewsets
 from rest_framework.exceptions import ValidationError
+from rest_framework.throttling import AnonRateThrottle
 
 from apps.common.permissions import IsAdminUser
 
@@ -14,9 +15,15 @@ from .models import Opportunity, OpportunitySourceRecord
 from .serializers import OpportunitySerializer
 
 
+class PublicApiRateThrottle(AnonRateThrottle):
+    """Rate throttle for public API endpoints."""
+    scope = 'public_api'
+
+
 class OpportunityViewSet(viewsets.ModelViewSet):
     serializer_class = OpportunitySerializer
     lookup_field = 'slug'
+    throttle_classes = [PublicApiRateThrottle]
     filter_backends = (
         DjangoFilterBackend,
         filters.SearchFilter,

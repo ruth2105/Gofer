@@ -44,11 +44,72 @@ services:
         value: https://gofere-api-ruth2105.onrender.com,https://gofere-web-preview.onrender.com,https://gofere.vercel.app
       - key: GOFER_FRONTEND_URL
         value: https://gofere.vercel.app
+      # ⚠️ PRODUCTION DEPLOYMENT CHECKLIST - UPDATE THESE VALUES BEFORE DEPLOYING ⚠️
+      
+      # EMAIL CONFIGURATION
+      # CRITICAL: Change EMAIL_BACKEND to a real email provider before production deploy
+      # Options:
+      #   - config.email_backends.brevo.BrevoEmailBackend (recommended, 300 free emails/day)
+      #   - django.core.mail.backends.smtp.EmailBackend (requires EMAIL_HOST, EMAIL_PORT, etc.)
+      # DO NOT deploy with console backend - users cannot verify accounts or reset passwords!
       - key: EMAIL_BACKEND
-        value: django.core.mail.backends.console.EmailBackend
+        value: django.core.mail.backends.console.EmailBackend  # ⚠️ MUST CHANGE FOR PRODUCTION
       - key: GOFER_EMAIL_FROM
-        value: noreply@goferexam.com
+        value: noreply@goferexam.com  # ⚠️ MUST use verified sender address
+      
+      # BREVO EMAIL PROVIDER (if using Brevo, recommended)
+      # Get API key from https://app.brevo.com/settings/keys/api
+      # - key: BREVO_API_KEY
+      #   sync: false  # Mark as secret
+      
+      # SMTP EMAIL PROVIDER (if using SMTP instead of Brevo)
+      # - key: EMAIL_HOST
+      #   value: smtp.your-provider.com
+      # - key: EMAIL_PORT
+      #   value: 587
+      # - key: EMAIL_HOST_USER
+      #   value: your-username
+      # - key: EMAIL_HOST_PASSWORD
+      #   sync: false  # Mark as secret
+      # - key: EMAIL_USE_TLS
+      #   value: True
+      # - key: EMAIL_USE_SSL
+      #   value: False
+      
+      # FILE STORAGE CONFIGURATION
+      # CRITICAL: Change STORAGE_BACKEND to cloud storage before production deploy
+      # Options:
+      #   - R2: Cloudflare R2 (recommended, 10GB free, S3-compatible)
+      #   - S3: Amazon S3 (costs apply)
+      #   - GCS: Google Cloud Storage (costs apply)
+      #   - AZURE: Azure Blob Storage (costs apply)
+      # DO NOT use LOCAL - files will be DELETED on every deployment/restart!
       - key: STORAGE_BACKEND
-        value: LOCAL
+        value: LOCAL  # ⚠️ MUST CHANGE FOR PRODUCTION - DATA LOSS RISK!
+      
+      # CLOUDFLARE R2 STORAGE (recommended - uncomment and configure before deploying)
+      # Get credentials from Cloudflare R2 dashboard
+      # - key: AWS_ACCESS_KEY_ID
+      #   sync: false  # Mark as secret
+      # - key: AWS_SECRET_ACCESS_KEY
+      #   sync: false  # Mark as secret
+      # - key: AWS_STORAGE_BUCKET_NAME
+      #   value: your-r2-bucket-name
+      # - key: AWS_S3_ENDPOINT_URL
+      #   value: https://your-account-id.r2.cloudflarestorage.com
+      # - key: AWS_S3_REGION_NAME
+      #   value: auto
+      
+      # MONITORING & ERROR TRACKING
+      # Recommended: Configure Sentry for production error tracking
       - key: MONITORING_ENABLED
-        value: false
+        value: false  # ⚠️ Set to 'true' and configure SENTRY_DSN for production
+      
+      # SENTRY ERROR TRACKING (uncomment and configure for production)
+      # Get DSN from https://sentry.io
+      # - key: SENTRY_DSN
+      #   sync: false  # Mark as secret
+      # - key: SENTRY_ENVIRONMENT
+      #   value: production
+      # - key: SENTRY_TRACES_SAMPLE_RATE
+      #   value: 0.1

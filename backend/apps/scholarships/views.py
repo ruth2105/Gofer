@@ -6,6 +6,7 @@ from django.db.models import Q
 from rest_framework import viewsets, filters, permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework.throttling import AnonRateThrottle, UserRateThrottle
 from django_filters.rest_framework import DjangoFilterBackend
 from drf_spectacular.utils import extend_schema, OpenApiParameter
 
@@ -18,6 +19,11 @@ from .services.matching import (
     get_current_scholarships,
     get_public_scholarships,
 )
+
+
+class PublicApiRateThrottle(AnonRateThrottle):
+    """Rate throttle for public API endpoints."""
+    scope = 'public_api'
 
 
 class ScholarshipViewSet(viewsets.ReadOnlyModelViewSet):
@@ -34,6 +40,7 @@ class ScholarshipViewSet(viewsets.ReadOnlyModelViewSet):
     """
 
     permission_classes = [permissions.AllowAny]
+    throttle_classes = [PublicApiRateThrottle]
 
     filter_backends = [
         DjangoFilterBackend,
@@ -191,6 +198,7 @@ class EligibleScholarshipsView(APIView):
     """Return current scholarships with personalized eligibility results."""
 
     permission_classes = [permissions.IsAuthenticated]
+    throttle_classes = [UserRateThrottle]
 
     @extend_schema(
         summary="Get scholarships matched to the current student",

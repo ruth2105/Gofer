@@ -20,9 +20,9 @@ from django.conf import settings
 from django.middleware.csrf import get_token
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_protect
-from rest_framework.decorators import api_view, authentication_classes, permission_classes
+from rest_framework.decorators import api_view, authentication_classes, permission_classes, throttle_classes
 from rest_framework.exceptions import PermissionDenied, ValidationError
-from rest_framework.throttling import ScopedRateThrottle
+from rest_framework.throttling import ScopedRateThrottle, AnonRateThrottle
 
 from apps.accounts.audit import record_security_event
 from apps.accounts.models import SecurityAuditEvent
@@ -109,6 +109,7 @@ def revoke_user_refresh_tokens(user):
 @api_view(['GET'])
 @authentication_classes([])
 @permission_classes([permissions.AllowAny])
+@throttle_classes([AnonRateThrottle])
 def csrf_token(request):
     return Response({'csrfToken': get_token(request._request)})
 

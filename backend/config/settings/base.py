@@ -277,6 +277,7 @@ REST_FRAMEWORK['DEFAULT_THROTTLE_RATES'] = {
     'auth_password_confirm': '10/hour',
     'auth_password_change': '5/hour',
     'auth_user_management': '60/hour',
+    'public_api': '100/hour',  # Rate limit for public API endpoints (scholarships, opportunities, etc.)
 }
 
 # Logging Configuration
