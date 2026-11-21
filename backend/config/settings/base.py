@@ -269,6 +269,8 @@ if EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS < 1:
     raise ImproperlyConfigured('EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS must be positive.')
 
 REST_FRAMEWORK['DEFAULT_THROTTLE_RATES'] = {
+    'anon': '1000/day',  # Default rate for AnonRateThrottle
+    'user': '10000/day',  # Default rate for UserRateThrottle
     'auth_register': '5/hour',
     'auth_login': '10/hour',
     'auth_verify': '20/hour',
