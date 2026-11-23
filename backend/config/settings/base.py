@@ -44,6 +44,7 @@ INSTALLED_APPS = [
     'apps.notifications',
     'apps.opportunities',
     'apps.common',
+    'apps.health',
 ]
 
 MIDDLEWARE = [
